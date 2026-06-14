@@ -1,0 +1,136 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+const appFetch = vi.hoisted(() => vi.fn());
+
+vi.mock('cloudflare:workers', () => ({
+  DurableObject: class {},
+  env: {},
+}));
+
+vi.mock('cloudflare:email', () => ({
+  EmailMessage: class {
+    from: string;
+    to: string;
+    raw: string;
+
+    constructor(from: string, to: string, raw: string) {
+      this.from = from;
+      this.to = to;
+      this.raw = raw;
+    }
+  },
+}));
+
+vi.mock('../src/app.ts', () => ({
+  default: { fetch: appFetch },
+}));
+
+function rawEmail(body = 'Hello Charles') {
+  return [
+    'From: Matt <matt@eatsleeprepeat.net>',
+    'To: charles@questionable.services',
+    'Subject: Test thread',
+    'Message-ID: <message-1@example.com>',
+    'References: <parent@example.com>',
+    'Content-Type: text/plain; charset=utf-8',
+    '',
+    body,
+  ].join('\r\n');
+}
+
+function streamFromText(text: string) {
+  return new Response(text).body as ReadableStream<Uint8Array>;
+}
+
+function emailMessage(overrides: Partial<ForwardableEmailMessage> = {}) {
+  return {
+    from: 'matt@eatsleeprepeat.net',
+    to: 'charles@questionable.services',
+    raw: streamFromText(rawEmail()),
+    rawSize: rawEmail().length,
+    headers: new Headers(),
+    setReject: vi.fn(),
+    forward: vi.fn(),
+    reply: vi.fn(async () => ({ messageId: 'reply-id' })),
+    ...overrides,
+  } as unknown as ForwardableEmailMessage & {
+    setReject: ReturnType<typeof vi.fn>;
+    reply: ReturnType<typeof vi.fn>;
+  };
+}
+
+function executionContext() {
+  const pending: Promise<unknown>[] = [];
+  return {
+    ctx: {
+      waitUntil: vi.fn((promise: Promise<unknown>) => pending.push(promise)),
+      passThroughOnException: vi.fn(),
+      props: {},
+    } as unknown as ExecutionContext,
+    pending,
+  };
+}
+
+describe('Cloudflare email handler', () => {
+  beforeEach(() => {
+    appFetch.mockReset();
+  });
+
+  it('rejects unparseable messages without replying', async () => {
+    const { default: handler } = await import('../src/cloudflare.ts');
+    const message = emailMessage({
+      raw: new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.error(new Error('broken stream'));
+        },
+      }),
+    });
+    const { ctx } = executionContext();
+
+    await handler.email?.(message, {} as Env, ctx);
+
+    expect(message.setReject).toHaveBeenCalledWith('Charles could not parse that email safely.');
+    expect(message.reply).not.toHaveBeenCalled();
+  });
+
+  it('falls back to EMAIL.send with display name and thread headers', async () => {
+    const { default: handler } = await import('../src/cloudflare.ts');
+    const send = vi.fn(async () => ({ messageId: 'fallback-id' }));
+    const recordEmailThread = vi.fn(async () => undefined);
+    const message = emailMessage({
+      reply: vi.fn(async () => Promise.reject(new Error('reply failed'))),
+    });
+    const { ctx, pending } = executionContext();
+
+    appFetch.mockResolvedValue(Response.json({ result: { replyText: 'Reply **body**' } }));
+
+    await handler.email?.(
+      message,
+      {
+        INTERNAL_AUTH_SECRET: 'internal-secret',
+        EMAIL: { send },
+        AUTH_STORE: { getByName: () => ({ recordEmailThread }) },
+      } as unknown as Env,
+      ctx,
+    );
+    await Promise.all(pending);
+
+    expect(send).toHaveBeenCalledWith(
+      expect.objectContaining({
+        from: { email: 'charles@questionable.services', name: 'Charles, your Agent' },
+        to: 'matt@eatsleeprepeat.net',
+        headers: {
+          'In-Reply-To': '<message-1@example.com>',
+          References: '<parent@example.com>',
+        },
+      }),
+    );
+    expect(recordEmailThread).toHaveBeenCalledWith(
+      expect.objectContaining({
+        threadKey: 'matt@eatsleeprepeat.net::test thread',
+        inboundText: expect.stringContaining('Hello Charles'),
+        replyText: 'Reply **body**',
+      }),
+    );
+  });
+});

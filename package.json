@@ -1,0 +1,45 @@
+{
+  "name": "charles",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "flue dev --target cloudflare",
+    "build": "flue build --target cloudflare",
+    "deploy": "flue build --target cloudflare && wrangler deploy",
+    "typecheck": "tsc --noEmit",
+    "lint": "oxlint",
+    "format": "oxfmt --write .",
+    "format:check": "oxfmt --check .",
+    "cf:types": "wrangler types",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@better-auth/passkey": "^1.6.18",
+    "@cloudflare/kumo": "^2.5.2",
+    "@cloudflare/playwright": "^1.3.0",
+    "@flue/runtime": "^0.10.1",
+    "@phosphor-icons/react": "^2.1.10",
+    "agents": "^0.14.1",
+    "better-auth": "^1.5.0",
+    "better-result": "^2.9.2",
+    "hono": "^4.10.8",
+    "mimetext": "^3.0.27",
+    "postal-mime": "^2.6.3",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
+    "valibot": "^1.2.0"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20260613.1",
+    "@flue/cli": "^0.10.1",
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "oxfmt": "^0.54.0",
+    "oxlint": "^1.69.0",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.16",
+    "wrangler": "^4.55.0"
+  },
+  "packageManager": "pnpm@10.25.0"
+}
