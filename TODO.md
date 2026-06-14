@@ -7,7 +7,7 @@ This file tracks what is still incomplete or risky in the current Charles app. K
 - [x] Project deploys as Cloudflare Worker `charles` with Flue-generated config from `dist/charles/wrangler.json`.
 - [x] Main checks pass: `pnpm format:check`, `pnpm typecheck`, `pnpm lint`, `pnpm test`, `pnpm build`.
 - [x] Generated deploy dry-run passes with `pnpm exec wrangler deploy --dry-run --config dist/charles/wrangler.json`.
-- [x] Live deploy succeeds; latest verified version is `07e5c5ee-5dfc-470b-8e91-fd9ea7e25e89`.
+- [x] Live deploy succeeds; latest verified version is `370f4afe-ab06-4cac-b776-47672da4e87a`.
 - [x] Public live route smoke passes for `/`, `/login`, `/health`, and `/kumo.css`.
 - [x] Anonymous `/dashboard` returns `401`.
 - [x] Root `.gitignore` excludes `.dev.vars`, `.dev.vars.*`, `.env*`, `dist`, `.flue-vite`, `.wrangler`, `worker-configuration.d.ts`, and test output.
@@ -60,8 +60,9 @@ This file tracks what is still incomplete or risky in the current Charles app. K
 - [x] Research workflow connects Resy MCP at `https://apigw.americanexpress.com/dining/v1/mcp`.
 - [x] Require source-backed research answers in prompt instructions and extract citation URLs from research text results.
 - [x] Add tests proving email-prompt research classification invokes the research workflow path.
+- [x] Parts requests route through the research workflow with a `parts_search` tool for Porsche 911 and BMW 2002 part-number, fitment, stock, price, and symptom-driven parts research.
 - [ ] Add Browser Run-backed research tests for prompts with supplied URLs and prompts without URLs.
-- [ ] Expand parts-search beyond the current stub with realistic Pelican/eBay/repair-source requests and result summaries.
+- [ ] Live-test parts-search answers against Pelican Parts, FCP Euro, RockAuto, BluntTech, Pelican forums, BMW2002FAQ, and RealOEM pages.
 
 ## Dashboard And Auth
 

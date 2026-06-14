@@ -52,7 +52,7 @@ function workflowReply(result: InternalWorkflowResult) {
 async function routeToChildWorkflow(
   env: Env,
   payload: InboundEmailPayload,
-  workflow: 'grocery-cart' | 'research' | 'parts-search',
+  workflow: 'grocery-cart' | 'research',
   childPayload: unknown,
 ) {
   const sender = requireAllowlistedSender(payload.from);
@@ -89,7 +89,10 @@ export async function run({ init, payload, env }: FlueContext<InboundEmailPayloa
   }
 
   if (intent === 'parts-search') {
-    return routeToChildWorkflow(env, payload, 'parts-search', { prompt: payload.text });
+    return routeToChildWorkflow(env, payload, 'research', {
+      prompt: payload.text,
+      mode: 'parts-search',
+    });
   }
 
   if (intent === 'research') {

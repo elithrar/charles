@@ -1,6 +1,6 @@
 import type { WorkflowHistorySummary } from '../workflow-store.ts';
 
-type WorkflowName = 'grocery-cart' | 'research' | 'parts-search';
+type WorkflowName = 'grocery-cart' | 'research';
 
 export type InternalWorkflowResult = {
   workflow: WorkflowName;

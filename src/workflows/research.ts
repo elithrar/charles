@@ -9,10 +9,12 @@ import researchSkill from '../../.agents/skills/research/SKILL.md' with { type: 
 import { MCP_SERVER_URLS } from '../capabilities.ts';
 import { DEFAULT_MODEL, DEFAULT_THINKING_LEVEL } from '../config.ts';
 import { BROWSER_RUN_AGENT_INSTRUCTIONS, createBrowserRunTools } from '../tools/browser-run.ts';
+import { PARTS_SEARCH_AGENT_INSTRUCTIONS, createPartsSearchTools } from '../tools/parts-search.ts';
 
 type ResearchPayload = {
   prompt: string;
   context?: Array<{ title?: string; url: string; text: string }>;
+  mode?: 'general' | 'parts-search';
 };
 
 export const route: WorkflowRouteHandler = async (_c, next) => next();
@@ -61,7 +63,7 @@ const researcher = createAgent((_context) => ({
   model: DEFAULT_MODEL,
   thinkingLevel: DEFAULT_THINKING_LEVEL,
   skills: [researchSkill],
-  tools: createBrowserRunTools(_context.env as Env),
+  tools: [...createBrowserRunTools(_context.env as Env), ...createPartsSearchTools()],
   instructions: `You synthesize concise research answers from tool evidence.
 
 <tool_routing>
@@ -69,6 +71,7 @@ const researcher = createAgent((_context) => ({
 - Use Resy MCP for restaurant, dining, and reservation availability research.
 - Use GitHub MCP for repository, issue, pull request, code, and Actions tasks.
 - Use Browser Run for rendered-page context, navigation, screenshots, PDFs, or URL inspection.
+- Use parts_search first for Porsche 911 or BMW 2002 parts requests, then verify the plan with live web/MCP evidence.
 </tool_routing>
 
 <rules>
@@ -79,6 +82,8 @@ const researcher = createAgent((_context) => ({
 </rules>
 
 ${BROWSER_RUN_AGENT_INSTRUCTIONS}
+
+${PARTS_SEARCH_AGENT_INSTRUCTIONS}
 
 ${GITHUB_MCP_AGENT_INSTRUCTIONS}
 
@@ -148,7 +153,10 @@ export async function run({ init, payload, env }: FlueContext<ResearchPayload, E
         .join('\n\n') ?? 'No browser context supplied yet.';
     const response = await session.skill('research', {
       args: {
-        prompt: payload.prompt,
+        prompt:
+          payload.mode === 'parts-search'
+            ? `Parts-search request. Use the parts_search tool first, then verify with live vendor/forum/source evidence before answering.\n\n${payload.prompt}`
+            : payload.prompt,
         context,
       },
     });

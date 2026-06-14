@@ -56,5 +56,9 @@
       "tag": "v2",
       "new_sqlite_classes": ["CharlesWorkflowStore"],
     },
+    {
+      "tag": "v3",
+      "deleted_classes": ["FluePartsSearchWorkflow"],
+    },
   ],
 }
