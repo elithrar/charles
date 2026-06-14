@@ -34,9 +34,19 @@ export type GroceryCartRequest = {
 };
 
 export type GroceryCartAction = {
-  type: 'add' | 'remove' | 'update';
-  item: string;
+  type:
+    | 'add'
+    | 'remove'
+    | 'update'
+    | 'list-cart'
+    | 'check-delivery'
+    | 'check-window'
+    | 'skip-delivery'
+    | 'add-recurring'
+    | 'block-item';
+  item?: string;
   quantity?: string;
+  date?: string;
   raw: string;
 };
 
@@ -69,8 +79,44 @@ type GroceryEnv = Pick<
 const imperfectHomeUrl = 'https://www.imperfectfoods.com/';
 const checkoutPattern =
   /\b(check\s*out|checkout|place\s+(the\s+)?order|buy\s+now|submit\s+order|pay\b)/i;
+const listCartPattern = /\b(?:show|list|review|inspect|what(?:'s| is))\b.*\b(?:cart|box|order)\b/i;
+const checkDeliveryPattern =
+  /\b(?:next\s+)?delivery\s+(?:date|day|time|status)|\bwhen\b.*\bdeliver/i;
+const checkWindowPattern = /\b(?:shopping\s+window|window\s+(?:open|close)|when\b.*\bshop)/i;
+const readOnlyActionTypes = new Set<GroceryCartAction['type']>([
+  'list-cart',
+  'check-delivery',
+  'check-window',
+]);
 
 const actionPatterns: Array<{ type: GroceryCartAction['type']; pattern: RegExp }> = [
+  {
+    type: 'list-cart',
+    pattern: listCartPattern,
+  },
+  {
+    type: 'check-delivery',
+    pattern: checkDeliveryPattern,
+  },
+  {
+    type: 'check-window',
+    pattern: checkWindowPattern,
+  },
+  {
+    type: 'skip-delivery',
+    pattern:
+      /\b(?:skip|pause)\s+(?:my\s+)?(?:next\s+)?(?:week|delivery|order|box)(?:\s+(?:for|on)\s+(.+))?/i,
+  },
+  {
+    type: 'add-recurring',
+    pattern:
+      /\b(?:always|recurring|every\s+week|weekly)\s+(?:add|include|get|send)\s+(.+?)(?:\s+(?:to|in)\s+(?:my\s+)?(?:box|cart|order))?$/i,
+  },
+  {
+    type: 'block-item',
+    pattern:
+      /\b(?:never|block|exclude|do\s+not|don't)\s+(?:send|include|add|get)?\s*(.+?)(?:\s+(?:to|in|from)\s+(?:my\s+)?(?:box|cart|order))?$/i,
+  },
   {
     type: 'add',
     pattern:
@@ -78,8 +124,7 @@ const actionPatterns: Array<{ type: GroceryCartAction['type']; pattern: RegExp }
   },
   {
     type: 'remove',
-    pattern:
-      /\b(?:remove|delete|skip|drop)\s+(.+?)(?:\s+from\s+(?:the\s+)?(?:cart|box|order|list))?$/i,
+    pattern: /\b(?:remove|delete|drop)\s+(.+?)(?:\s+from\s+(?:the\s+)?(?:cart|box|order|list))?$/i,
   },
   {
     type: 'update',
@@ -89,14 +134,27 @@ const actionPatterns: Array<{ type: GroceryCartAction['type']; pattern: RegExp }
 
 export function parseGroceryCartActions(prompt: string): GroceryCartAction[] {
   return prompt
-    .split(/[\n.;]+/)
+    .split(/[\n.;?!]+/)
     .map((part) => part.trim())
     .filter(Boolean)
     .flatMap((raw): GroceryCartAction[] => {
+      const combinedReadOnly = parseCombinedReadOnlyActions(raw);
+      if (combinedReadOnly.length > 0) {
+        return combinedReadOnly;
+      }
+
       for (const { type, pattern } of actionPatterns) {
         const match = raw.match(pattern);
         if (!match) {
           continue;
+        }
+
+        if (type === 'list-cart' || type === 'check-delivery' || type === 'check-window') {
+          return [{ type, raw }];
+        }
+
+        if (type === 'skip-delivery') {
+          return [{ type, date: match[1]?.trim(), raw }];
         }
 
         if (type === 'update') {
@@ -108,6 +166,21 @@ export function parseGroceryCartActions(prompt: string): GroceryCartAction[] {
 
       return [];
     });
+}
+
+function parseCombinedReadOnlyActions(raw: string): GroceryCartAction[] {
+  const actions: GroceryCartAction[] = [];
+  if (listCartPattern.test(raw)) {
+    actions.push({ type: 'list-cart', raw });
+  }
+  if (checkDeliveryPattern.test(raw)) {
+    actions.push({ type: 'check-delivery', raw });
+  }
+  if (checkWindowPattern.test(raw)) {
+    actions.push({ type: 'check-window', raw });
+  }
+
+  return actions.length > 1 ? actions : [];
 }
 
 export async function runGroceryCartRequest(request: GroceryCartRequest, env: GroceryEnv) {
@@ -153,7 +226,7 @@ export async function runGroceryCartRequest(request: GroceryCartRequest, env: Gr
     } satisfies GroceryCartSummary);
   }
 
-  if (request.dryRun || plannedActions.length === 0) {
+  if (request.dryRun || plannedActions.every(isReadOnlyAction)) {
     const authenticated = await inspectAuthenticatedImperfectProduceCart(env.BROWSER, credentials);
     return Result.ok({
       status: authenticated.status,
@@ -208,14 +281,24 @@ function buildInitialReviewItems(
   }
 
   if (plannedActions.length === 0) {
-    items.push('No explicit add/remove/update grocery cart action was found.');
+    items.push('No explicit grocery cart or account action was found.');
   }
 
-  if (getImperfectCredentials(env) && plannedActions.length > 0) {
-    items.push('Live Imperfect Produce cart mutation is allowed for these requested edits.');
+  if (getImperfectCredentials(env) && plannedActions.some(isMutatingAction)) {
+    items.push(
+      'Live Imperfect Produce account/cart mutation is allowed for these requested edits.',
+    );
   }
 
   return items;
+}
+
+function isReadOnlyAction(action: GroceryCartAction): boolean {
+  return readOnlyActionTypes.has(action.type);
+}
+
+function isMutatingAction(action: GroceryCartAction): boolean {
+  return !isReadOnlyAction(action);
 }
 
 function getImperfectCredentials(env: GroceryEnv): { email: string; password: string } | null {
@@ -412,6 +495,16 @@ async function loginToImperfectProduce(page: Page, email: string, password: stri
 async function openCartSurface(page: Page): Promise<void> {
   await clickFirst(page, [
     () =>
+      safeClick('edit cart button', () =>
+        page.getByRole('button', { name: /edit\s+cart|customize|start\s+shopping/i }).click({
+          timeout: 5000,
+        }),
+      ),
+    () =>
+      safeClick('shop link', () =>
+        page.getByRole('link', { name: /shop|edit\s+cart|customize/i }).click({ timeout: 5000 }),
+      ),
+    () =>
       safeClick('open cart link', () =>
         page.getByRole('link', { name: /cart|box|basket/i }).click({ timeout: 5000 }),
       ),
@@ -419,10 +512,59 @@ async function openCartSurface(page: Page): Promise<void> {
       safeClick('open cart button', () =>
         page.getByRole('button', { name: /cart|box|basket/i }).click({ timeout: 5000 }),
       ),
+    () =>
+      safeClick('open cart aria control', () =>
+        page
+          .locator(
+            'button[aria-label*="cart" i], button[aria-label*="basket" i], a[aria-label*="cart" i], a[aria-label*="basket" i]',
+          )
+          .first()
+          .click({ timeout: 5000 }),
+      ),
+    () =>
+      safeClick('open cart href', () =>
+        page.locator('a[href*="cart" i], a[href*="basket" i]').first().click({ timeout: 5000 }),
+      ),
+    () =>
+      safeClick('open cart total button', () =>
+        page.locator('button:has-text("$")').first().click({ timeout: 5000 }),
+      ),
+    () =>
+      safeClick('open cart total text', () =>
+        page
+          .getByText(/\$\d+(?:\.\d{2})?/)
+          .first()
+          .click({ timeout: 5000 }),
+      ),
+    () =>
+      safeClick('open cart item count', () =>
+        page.locator('button:has-text("items")').first().click({ timeout: 5000 }),
+      ),
   ]).catch(() => undefined);
+  await page.waitForLoadState('networkidle', { timeout: 10000 }).catch(() => undefined);
 }
 
 async function applyGroceryAction(page: Page, action: GroceryCartAction) {
+  if (
+    action.type === 'list-cart' ||
+    action.type === 'check-delivery' ||
+    action.type === 'check-window'
+  ) {
+    return { taken: false, message: 'Inspected the authenticated grocery account and cart.' };
+  }
+
+  if (action.type === 'skip-delivery') {
+    return skipDelivery(page, action);
+  }
+
+  if (action.type === 'add-recurring') {
+    return addRecurringItem(page, action);
+  }
+
+  if (action.type === 'block-item') {
+    return blockItem(page, action);
+  }
+
   if (action.type === 'add') {
     return addGroceryItem(page, action);
   }
@@ -435,22 +577,24 @@ async function applyGroceryAction(page: Page, action: GroceryCartAction) {
 }
 
 async function addGroceryItem(page: Page, action: GroceryCartAction) {
+  if (!action.item) {
+    return { taken: false, message: `Could not identify an item to add from: ${action.raw}` };
+  }
+  const itemName = action.item;
+
   await fillFirst(page, [
-    () => page.getByRole('searchbox').fill(action.item, { timeout: 5000 }),
-    () => page.getByPlaceholder(/search/i).fill(action.item, { timeout: 5000 }),
-    () => page.locator('input[type="search"]').first().fill(action.item, { timeout: 5000 }),
+    () => page.getByRole('searchbox').fill(itemName, { timeout: 5000 }),
+    () => page.getByPlaceholder(/search/i).fill(itemName, { timeout: 5000 }),
+    () => page.locator('input[type="search"]').first().fill(itemName, { timeout: 5000 }),
   ]);
   await page.keyboard.press('Enter');
   await page.waitForLoadState('networkidle', { timeout: 10000 }).catch(() => undefined);
   await clickFirst(page, [
     () =>
-      safeClick(`add ${action.item}`, () =>
+      safeClick(`add ${itemName}`, () =>
         page
           .getByRole('button', {
-            name: new RegExp(
-              `add.*${escapeRegex(action.item)}|${escapeRegex(action.item)}.*add`,
-              'i',
-            ),
+            name: new RegExp(`add.*${escapeRegex(itemName)}|${escapeRegex(itemName)}.*add`, 'i'),
           })
           .first()
           .click({ timeout: 5000 }),
@@ -464,26 +608,31 @@ async function addGroceryItem(page: Page, action: GroceryCartAction) {
       ),
   ]);
 
-  return { taken: true, message: `Added ${action.item} to the live cart.` };
+  return { taken: true, message: `Added ${itemName} to the live cart.` };
 }
 
 async function removeGroceryItem(page: Page, action: GroceryCartAction) {
-  const item = page.getByText(new RegExp(escapeRegex(action.item), 'i')).first();
+  if (!action.item) {
+    return { taken: false, message: `Could not identify an item to remove from: ${action.raw}` };
+  }
+  const itemName = action.item;
+
+  const item = page.getByText(new RegExp(escapeRegex(itemName), 'i')).first();
   await item.scrollIntoViewIfNeeded({ timeout: 5000 }).catch(() => undefined);
   await clickFirst(page, [
     () =>
-      safeClick(`remove ${action.item}`, () =>
+      safeClick(`remove ${itemName}`, () =>
         item
           .locator('xpath=ancestor::*[self::li or self::div][1]')
           .getByRole('button', { name: /remove|delete|minus|−|-/i })
           .click({ timeout: 5000 }),
       ),
     () =>
-      safeClick(`remove ${action.item} button`, () =>
+      safeClick(`remove ${itemName} button`, () =>
         page
           .getByRole('button', {
             name: new RegExp(
-              `remove.*${escapeRegex(action.item)}|${escapeRegex(action.item)}.*remove`,
+              `remove.*${escapeRegex(itemName)}|${escapeRegex(itemName)}.*remove`,
               'i',
             ),
           })
@@ -491,11 +640,16 @@ async function removeGroceryItem(page: Page, action: GroceryCartAction) {
       ),
   ]);
 
-  return { taken: true, message: `Removed ${action.item} from the live cart.` };
+  return { taken: true, message: `Removed ${itemName} from the live cart.` };
 }
 
 async function updateGroceryItem(page: Page, action: GroceryCartAction) {
-  const item = page.getByText(new RegExp(escapeRegex(action.item), 'i')).first();
+  if (!action.item) {
+    return { taken: false, message: `Could not identify an item to update from: ${action.raw}` };
+  }
+  const itemName = action.item;
+
+  const item = page.getByText(new RegExp(escapeRegex(itemName), 'i')).first();
   await item.scrollIntoViewIfNeeded({ timeout: 5000 }).catch(() => undefined);
   const container = item.locator('xpath=ancestor::*[self::li or self::div][1]');
   await fillFirst(page, [
@@ -507,7 +661,126 @@ async function updateGroceryItem(page: Page, action: GroceryCartAction) {
         .fill(action.quantity ?? '', { timeout: 5000 }),
   ]);
 
-  return { taken: true, message: `Updated ${action.item} to ${action.quantity}.` };
+  return { taken: true, message: `Updated ${itemName} to ${action.quantity}.` };
+}
+
+async function skipDelivery(page: Page, action: GroceryCartAction) {
+  await openScheduleSurface(page);
+  await clickFirst(page, [
+    () =>
+      safeClick('skip delivery button', () =>
+        page.getByRole('button', { name: /skip\s+(delivery|order|box)|pause/i }).click({
+          timeout: 5000,
+        }),
+      ),
+    () =>
+      safeClick('skip delivery link', () =>
+        page.getByRole('link', { name: /skip\s+(delivery|order|box)|pause/i }).click({
+          timeout: 5000,
+        }),
+      ),
+  ]);
+  await page.waitForLoadState('networkidle', { timeout: 10000 }).catch(() => undefined);
+
+  return {
+    taken: true,
+    message: action.date
+      ? `Requested delivery skip for ${action.date}.`
+      : 'Requested skip for the next available delivery.',
+  };
+}
+
+async function addRecurringItem(page: Page, action: GroceryCartAction) {
+  if (!action.item) {
+    return { taken: false, message: `Could not identify a recurring item from: ${action.raw}` };
+  }
+  const itemName = action.item;
+
+  await addGroceryItem(page, { ...action, type: 'add' });
+  await clickFirst(page, [
+    () =>
+      safeClick(`favorite ${itemName}`, () =>
+        page
+          .getByRole('button', {
+            name: new RegExp(`favorite|save|always.*${escapeRegex(itemName)}`, 'i'),
+          })
+          .first()
+          .click({ timeout: 3000 }),
+      ),
+    () =>
+      safeClick(`recurring ${itemName}`, () =>
+        page
+          .getByRole('button', { name: /recurring|weekly|every\s+week/i })
+          .first()
+          .click({ timeout: 3000 }),
+      ),
+  ]).catch(() => undefined);
+
+  return {
+    taken: true,
+    message: `Added ${itemName} to the cart and attempted to mark it as recurring/favorite when available.`,
+  };
+}
+
+async function blockItem(page: Page, action: GroceryCartAction) {
+  if (!action.item) {
+    return { taken: false, message: `Could not identify an item to block from: ${action.raw}` };
+  }
+  const itemName = action.item;
+
+  await openPreferencesSurface(page);
+  await fillFirst(page, [
+    () => page.getByRole('searchbox').fill(itemName, { timeout: 5000 }),
+    () => page.getByPlaceholder(/search|item|preference/i).fill(itemName, { timeout: 5000 }),
+    () => page.locator('input[type="search"]').first().fill(itemName, { timeout: 5000 }),
+  ]).catch(() => undefined);
+  await clickFirst(page, [
+    () =>
+      safeClick(`block ${itemName}`, () =>
+        page
+          .getByRole('button', { name: new RegExp(`never|exclude|block|dislike|don't send`, 'i') })
+          .first()
+          .click({ timeout: 5000 }),
+      ),
+  ]);
+
+  return { taken: true, message: `Marked ${itemName} as blocked/excluded when available.` };
+}
+
+async function openScheduleSurface(page: Page): Promise<void> {
+  await clickFirst(page, [
+    () =>
+      safeClick('deliveries link', () =>
+        page.getByRole('link', { name: /deliveries|schedule|orders|account/i }).click({
+          timeout: 5000,
+        }),
+      ),
+    () =>
+      safeClick('deliveries button', () =>
+        page.getByRole('button', { name: /deliveries|schedule|orders|account/i }).click({
+          timeout: 5000,
+        }),
+      ),
+  ]).catch(() => undefined);
+  await page.waitForLoadState('networkidle', { timeout: 10000 }).catch(() => undefined);
+}
+
+async function openPreferencesSurface(page: Page): Promise<void> {
+  await clickFirst(page, [
+    () =>
+      safeClick('preferences link', () =>
+        page.getByRole('link', { name: /preferences|favorites|never\s+send|account/i }).click({
+          timeout: 5000,
+        }),
+      ),
+    () =>
+      safeClick('preferences button', () =>
+        page.getByRole('button', { name: /preferences|favorites|never\s+send|account/i }).click({
+          timeout: 5000,
+        }),
+      ),
+  ]).catch(() => undefined);
+  await page.waitForLoadState('networkidle', { timeout: 10000 }).catch(() => undefined);
 }
 
 async function readCartItems(page: Page): Promise<string[]> {

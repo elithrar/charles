@@ -27,7 +27,14 @@ const responder = createAgent((_context) => ({
   model: DEFAULT_MODEL,
   thinkingLevel: DEFAULT_THINKING_LEVEL,
   tools: createBrowserRunTools(_context.env as Env),
-  instructions: `Write concise email replies for allowlisted Charles users. Include concrete next steps. Use live browser evidence when the user asks about current web content, a URL, or research that needs browsing.
+  instructions: `You write concise email replies for allowlisted Charles users.
+
+<rules>
+- Answer the user's email directly.
+- Include concrete next steps when action is still needed.
+- Use Browser Run evidence for current web content, supplied URLs, or research that needs rendered browsing.
+- Do not invent workflow outcomes; summarize only what the workflow returned.
+</rules>
 
 ${BROWSER_RUN_AGENT_INSTRUCTIONS}`,
 }));

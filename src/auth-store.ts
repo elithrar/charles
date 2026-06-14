@@ -60,6 +60,11 @@ export type EmailThreadMessage = {
   receivedAt: string;
 };
 
+export type UserLoginSummary = {
+  email: string;
+  timestamp: string;
+};
+
 export type RecordEmailThreadInput = {
   threadKey: string;
   sender: string;
@@ -361,6 +366,26 @@ export class CharlesAuthStore extends DurableObject<Env> {
     }));
   }
 
+  async getRecentUserLogins(limit = 10): Promise<UserLoginSummary[]> {
+    const usersById = new Map(
+      this.listModel('user').map((user) => [
+        user.id,
+        typeof user.email === 'string' ? user.email : user.id,
+      ]),
+    );
+
+    return this.listModel('session')
+      .map((session) => ({
+        email:
+          typeof session.userId === 'string'
+            ? (usersById.get(session.userId) ?? session.userId)
+            : 'unknown',
+        timestamp: normalizeAuthTimestamp(session.createdAt ?? session.updatedAt),
+      }))
+      .sort((left, right) => right.timestamp.localeCompare(left.timestamp))
+      .slice(0, Math.max(1, Math.min(50, Math.floor(limit))));
+  }
+
   async createAuthRecord(
     model: string,
     data: AuthRecord,
@@ -521,4 +546,20 @@ export class CharlesAuthStore extends DurableObject<Env> {
   fetch(): Response {
     return new Response('Not found', { status: 404 });
   }
+}
+
+function normalizeAuthTimestamp(value: unknown): string {
+  if (value instanceof Date) {
+    return value.toISOString();
+  }
+
+  if (typeof value === 'string') {
+    return value;
+  }
+
+  if (typeof value === 'number') {
+    return new Date(value).toISOString();
+  }
+
+  return new Date(0).toISOString();
 }

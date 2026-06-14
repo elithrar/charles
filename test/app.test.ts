@@ -50,6 +50,12 @@ const env = {
           receivedAt: '2026-06-19T14:00:00.000Z',
         },
       ]),
+      getRecentUserLogins: vi.fn(async () => [
+        {
+          email: 'matt@eatsleeprepeat.net',
+          timestamp: '2026-06-19T15:00:00.000Z',
+        },
+      ]),
     }),
   },
   WORKFLOW_STORE: {
@@ -100,7 +106,7 @@ describe('app routes', () => {
 
     expect(response.status).toBe(200);
     const html = await response.text();
-    expect(html).toContain('<span>Pleased to meet you</span>');
+    expect(html).toContain('<span>Pleased to meet you.</span>');
     expect(html).toMatch(/<span>I(?:'|&#x27;)m Charles\.<\/span>/);
     expect(html).toContain('https://github.com/elithrar/charles');
   });
@@ -247,6 +253,28 @@ describe('app routes', () => {
     expect(html).toContain('<table');
     expect(html).toContain('Research request');
     expect(html).not.toContain('passkey-add');
+  });
+
+  it('serves settings with logins, MCP servers, and bundled skills', async () => {
+    const { default: app } = await import('../src/app.ts');
+    const response = await app.fetch(
+      new Request('https://charles.test/dashboard?tab=settings', {
+        headers: { 'x-charles-internal-auth': 'test-internal-secret' },
+      }),
+      env,
+    );
+
+    expect(response.status).toBe(200);
+    const html = await response.text();
+    expect(html).toContain('Recent logins');
+    expect(html).toContain('matt@eatsleeprepeat.net');
+    expect(html).toContain('MCP servers');
+    expect(html).toContain('https://api.githubcopilot.com/mcp/');
+    expect(html).toContain('https://apigw.americanexpress.com/dining/v1/mcp');
+    expect(html).toContain('Bundled skills');
+    expect(html).toContain('grocery');
+    expect(html).not.toContain('passkey-add');
+    expect(html).not.toContain('Register this device as a passkey');
   });
 
   it('serves an email thread detail page', async () => {

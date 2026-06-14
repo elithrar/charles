@@ -8,9 +8,12 @@ import { Text } from '@cloudflare/kumo/components/text';
 import { GithubLogoIcon } from '@phosphor-icons/react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import type { ReactNode } from 'react';
-import type { EmailThreadMessage, EmailThreadPage } from './auth-store.ts';
+import type { EmailThreadMessage, EmailThreadPage, UserLoginSummary } from './auth-store.ts';
+import type { ConfiguredMcpServer } from './capabilities.ts';
 import type { GroceryReminderSummary } from './services/scheduler.ts';
 import type { WorkflowHistorySummary } from './workflow-store.ts';
+
+type DashboardMcpServer = ConfiguredMcpServer & { configured: boolean };
 
 function isSafeHttpUrl(url: string) {
   try {
@@ -162,10 +165,22 @@ function normalizeDashboardTab(value: string | undefined): DashboardTab {
 
 function dashboardTabs(activeTab: DashboardTab) {
   const tabs: Array<{ value: DashboardTab; label: string; href: string }> = [
-    { value: 'dashboard', label: 'Dashboard', href: '/dashboard?tab=dashboard' },
+    {
+      value: 'dashboard',
+      label: 'Dashboard',
+      href: '/dashboard?tab=dashboard',
+    },
     { value: 'emails', label: 'Emails', href: '/dashboard?tab=emails' },
-    { value: 'groceries', label: 'Groceries', href: '/dashboard?tab=groceries' },
-    { value: 'workflows', label: 'Workflows', href: '/dashboard?tab=workflows' },
+    {
+      value: 'groceries',
+      label: 'Groceries',
+      href: '/dashboard?tab=groceries',
+    },
+    {
+      value: 'workflows',
+      label: 'Workflows',
+      href: '/dashboard?tab=workflows',
+    },
     { value: 'settings', label: 'Settings', href: '/dashboard?tab=settings' },
   ];
 
@@ -241,7 +256,7 @@ function pageShell(title: string, content: ReactNode, script?: string) {
             width: min(100%, 72rem);
             margin: 0 auto;
             display: grid;
-            gap: clamp(2.5rem, 6vw, 5rem);
+            gap: clamp(1.5rem, 3vw, 2.5rem);
           }
 
           .charles-dashboard-header {
@@ -250,11 +265,13 @@ function pageShell(title: string, content: ReactNode, script?: string) {
           }
 
           .charles-dashboard-tabs {
-            margin-top: clamp(2rem, 5vw, 3.5rem);
+            justify-self: center;
+            width: fit-content;
             max-width: 100%;
           }
 
           .charles-dashboard-tabs-list {
+            width: max-content;
             max-width: 100%;
           }
 
@@ -439,7 +456,8 @@ function pageShell(title: string, content: ReactNode, script?: string) {
             }
 
             .charles-dashboard-tabs {
-              margin-top: 2rem;
+              justify-self: stretch;
+              width: 100%;
             }
           }
         `}</style>
@@ -491,7 +509,7 @@ export function homeHtml() {
       <body>
         <main aria-label="Charles homepage">
           <h1>
-            <span>Pleased to meet you</span>
+            <span>Pleased to meet you.</span>
             <span>I'm Charles.</span>
           </h1>
           <a href="https://github.com/elithrar/charles" aria-label="Charles on GitHub">
@@ -573,6 +591,9 @@ export function dashboardHtml(
   reminders: GroceryReminderSummary[],
   emailThreads: EmailThreadPage,
   workflows: WorkflowHistorySummary[],
+  recentLogins: UserLoginSummary[],
+  mcpServers: DashboardMcpServer[],
+  bundledSkills: string[],
   activeTabValue?: string,
 ) {
   const activeTab = normalizeDashboardTab(activeTabValue);
@@ -687,24 +708,65 @@ export function dashboardHtml(
   );
 
   const settingsPanel = (
-    <LayerCard className="charles-dashboard-card">
-      <Text variant="heading2" as="h2" DANGEROUS_className="charles-dashboard-card-title">
-        Account access
-      </Text>
-      <Text variant="secondary" DANGEROUS_className="charles-dashboard-copy">
-        Register this device as a passkey for faster sign-in.
-      </Text>
-      <Button type="button" id="passkey-add" variant="primary" className="charles-dashboard-copy">
-        Add passkey
-      </Button>
-      <Text
-        id="passkey-status"
-        role="status"
-        variant="secondary"
-        size="sm"
-        DANGEROUS_className="charles-dashboard-copy"
-      />
-    </LayerCard>
+    <div className="charles-dashboard-stack">
+      <LayerCard className="charles-dashboard-card">
+        <Text variant="heading2" as="h2" DANGEROUS_className="charles-dashboard-card-title">
+          Recent logins
+        </Text>
+        {recentLogins.length ? (
+          <Table className="charles-thread-table">
+            <Table.Header>
+              <Table.Row>
+                <Table.Head>Email</Table.Head>
+                <Table.Head>Timestamp</Table.Head>
+              </Table.Row>
+            </Table.Header>
+            <Table.Body>
+              {recentLogins.map((login, index) => (
+                <Table.Row key={`${login.email}-${login.timestamp}-${index}`}>
+                  <Table.Cell>{login.email}</Table.Cell>
+                  <Table.Cell>{new Date(login.timestamp).toLocaleString()}</Table.Cell>
+                </Table.Row>
+              ))}
+            </Table.Body>
+          </Table>
+        ) : (
+          <Text variant="secondary" DANGEROUS_className="charles-dashboard-copy">
+            No user logins recorded yet.
+          </Text>
+        )}
+      </LayerCard>
+      <LayerCard className="charles-dashboard-card">
+        <Text variant="heading2" as="h2" DANGEROUS_className="charles-dashboard-card-title">
+          MCP servers
+        </Text>
+        <ul className="charles-dashboard-list">
+          {mcpServers.map((server) => (
+            <li key={server.name}>
+              <Text bold>{server.name}</Text>
+              <Text variant="secondary" size="sm">
+                {server.configured ? 'Configured' : `Missing ${server.secretName}`}
+              </Text>
+              <Text variant="mono-secondary" as="code" DANGEROUS_className="charles-dashboard-copy">
+                {server.url}
+              </Text>
+            </li>
+          ))}
+        </ul>
+      </LayerCard>
+      <LayerCard className="charles-dashboard-card">
+        <Text variant="heading2" as="h2" DANGEROUS_className="charles-dashboard-card-title">
+          Bundled skills
+        </Text>
+        <ul className="charles-dashboard-list">
+          {bundledSkills.map((skill) => (
+            <li key={skill}>
+              <Text>{skill}</Text>
+            </li>
+          ))}
+        </ul>
+      </LayerCard>
+    </div>
   );
 
   const dashboardPanel = (
@@ -717,7 +779,8 @@ export function dashboardHtml(
           <li>
             <Text bold>Email threads</Text>
             <Text variant="secondary" DANGEROUS_className="charles-dashboard-copy">
-              {emailThreads.total} recorded thread{emailThreads.total === 1 ? '' : 's'}.
+              {emailThreads.total} recorded thread
+              {emailThreads.total === 1 ? '' : 's'}.
             </Text>
           </li>
           <li>
@@ -742,19 +805,6 @@ export function dashboardHtml(
       </div>
     </section>
   );
-  const settingsScript =
-    activeTab === 'settings'
-      ? `${passkeyClientScript}
-    document.getElementById('passkey-add')?.addEventListener('click', async () => {
-      const status = document.getElementById('passkey-status');
-      status.textContent = 'Waiting for passkey registration...';
-      const authClient = await createCharlesAuthClient(status);
-      if (!authClient) return;
-      const result = await authClient.passkey.addPasskey({ name: 'Charles passkey' });
-      status.textContent = result.error ? (result.error.message || 'Passkey registration failed.') : 'Passkey registered.';
-    });`
-      : undefined;
-
   return pageShell(
     'Charles Dashboard',
     <main className="charles-dashboard text-kumo-default">
@@ -780,7 +830,6 @@ export function dashboardHtml(
         </section>
       </section>
     </main>,
-    settingsScript,
   );
 }
 
@@ -811,7 +860,10 @@ export function threadHtml(userEmail: string | undefined, messages: EmailThreadM
               textToCopy={threadSender}
               size="sm"
               className="charles-thread-sender"
-              tooltip={{ text: 'Copy sender email', copiedText: 'Copied sender email' }}
+              tooltip={{
+                text: 'Copy sender email',
+                copiedText: 'Copied sender email',
+              }}
               labels={{ copyAction: 'Copy sender email' }}
             />
           </div>

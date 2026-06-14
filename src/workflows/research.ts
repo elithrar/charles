@@ -3,10 +3,10 @@ import {
   createAgent,
   type FlueContext,
   type McpServerConnection,
-  type ToolDefinition,
   type WorkflowRouteHandler,
 } from '@flue/runtime';
 import researchSkill from '../../.agents/skills/research/SKILL.md' with { type: 'skill' };
+import { MCP_SERVER_URLS } from '../capabilities.ts';
 import { DEFAULT_MODEL, DEFAULT_THINKING_LEVEL } from '../config.ts';
 import { BROWSER_RUN_AGENT_INSTRUCTIONS, createBrowserRunTools } from '../tools/browser-run.ts';
 
@@ -16,11 +16,6 @@ type ResearchPayload = {
 };
 
 export const route: WorkflowRouteHandler = async (_c, next) => next();
-
-const GITHUB_MCP_URL = 'https://api.githubcopilot.com/mcp/';
-const EXA_MCP_URL =
-  'https://mcp.exa.ai/mcp?tools=web_search_exa,web_fetch_exa,web_search_advanced_exa';
-const RESY_MCP_URL = 'https://apigw.americanexpress.com/dining/v1/mcp';
 
 const GITHUB_MCP_AGENT_INSTRUCTIONS = `
 <github_mcp_tool>
@@ -57,13 +52,25 @@ Resy task policy:
 - Summarize availability with dates, times, party size, venue names, locations, and any uncertainty from the tool response.
 </resy_mcp_tool>`;
 
-function createResearcher(mcpTools: ToolDefinition[] = []) {
-  return createAgent((_context) => ({
-    model: DEFAULT_MODEL,
-    thinkingLevel: DEFAULT_THINKING_LEVEL,
-    skills: [researchSkill],
-    tools: [...createBrowserRunTools(_context.env as Env), ...mcpTools],
-    instructions: `Synthesize concise research answers. Use Exa MCP for web search and source discovery when available. Use Resy MCP for restaurant and reservation research when available. Use Browser Run when the prompt needs rendered-page context, navigation, screenshots, or URL inspection. Use GitHub MCP for GitHub repository, issue, pull request, code, and Actions tasks when available. Cite URLs used as evidence.
+const researcher = createAgent((_context) => ({
+  model: DEFAULT_MODEL,
+  thinkingLevel: DEFAULT_THINKING_LEVEL,
+  skills: [researchSkill],
+  tools: createBrowserRunTools(_context.env as Env),
+  instructions: `You synthesize concise research answers from tool evidence.
+
+<tool_routing>
+- Use Exa MCP for broad web/source discovery and page fetching.
+- Use Resy MCP for restaurant, dining, and reservation availability research.
+- Use GitHub MCP for repository, issue, pull request, code, and Actions tasks.
+- Use Browser Run for rendered-page context, navigation, screenshots, PDFs, or URL inspection.
+</tool_routing>
+
+<rules>
+- Cite URLs used as evidence.
+- Prefer fetched/source evidence over model memory for current facts.
+- State uncertainty when a tool is unavailable or sources conflict.
+</rules>
 
 ${BROWSER_RUN_AGENT_INSTRUCTIONS}
 
@@ -72,8 +79,7 @@ ${GITHUB_MCP_AGENT_INSTRUCTIONS}
 ${EXA_MCP_AGENT_INSTRUCTIONS}
 
 ${RESY_MCP_AGENT_INSTRUCTIONS}`,
-  }));
-}
+}));
 
 async function connectMcpSafely(
   name: string,
@@ -93,7 +99,7 @@ async function connectGitHubMcp(env: Env): Promise<McpServerConnection | null> {
   }
 
   return connectMcpSafely('github', {
-    url: GITHUB_MCP_URL,
+    url: MCP_SERVER_URLS.github,
     headers: {
       Authorization: `Bearer ${env.GITHUB_MCP_PAT}`,
     },
@@ -106,7 +112,7 @@ async function connectExaMcp(env: Env): Promise<McpServerConnection | null> {
   }
 
   return connectMcpSafely('exa', {
-    url: EXA_MCP_URL,
+    url: MCP_SERVER_URLS.exa,
     headers: {
       'x-api-key': env.EXA_API_KEY,
     },
@@ -115,7 +121,7 @@ async function connectExaMcp(env: Env): Promise<McpServerConnection | null> {
 
 async function connectResyMcp(): Promise<McpServerConnection | null> {
   return connectMcpSafely('resy', {
-    url: RESY_MCP_URL,
+    url: MCP_SERVER_URLS.resy,
   });
 }
 
@@ -126,9 +132,9 @@ export async function run({ init, payload, env }: FlueContext<ResearchPayload, E
     connectResyMcp(),
   ]);
   try {
-    const harness = await init(
-      createResearcher([...(github?.tools ?? []), ...(exa?.tools ?? []), ...(resy?.tools ?? [])]),
-    );
+    const harness = await init(researcher, {
+      tools: [...(github?.tools ?? []), ...(exa?.tools ?? []), ...(resy?.tools ?? [])],
+    });
     const session = await harness.session('research');
     const context =
       payload.context

@@ -3,10 +3,11 @@ import { registerProvider } from '@flue/runtime';
 import { flue } from '@flue/runtime/routing';
 import { Result } from 'better-result';
 import { Hono, type MiddlewareHandler } from 'hono';
+import { BUNDLED_SKILLS, CONFIGURED_MCP_SERVERS } from './capabilities.ts';
 import { ALLOWLISTED_USERS, DEFAULT_MODEL } from './config.ts';
 import { requireAllowlistedSender } from './email.ts';
 import { createCharlesAuth } from './auth.ts';
-import type { EmailThreadMessage, EmailThreadPage } from './auth-store.ts';
+import type { EmailThreadMessage, EmailThreadPage, UserLoginSummary } from './auth-store.ts';
 import type { GroceryReminderSummary } from './services/scheduler.ts';
 import type { CharlesEnv } from './types.ts';
 import type { WorkflowHistorySummary } from './workflow-store.ts';
@@ -45,6 +46,7 @@ type SchedulerRpcStub = {
 type AuthStoreRpcStub = {
   getRecentEmailThreads(page?: number, pageSize?: number): Promise<EmailThreadPage>;
   getEmailThread(threadKey: string): Promise<EmailThreadMessage[]>;
+  getRecentUserLogins(limit?: number): Promise<UserLoginSummary[]>;
 };
 
 type WorkflowStoreRpcStub = {
@@ -141,9 +143,22 @@ app.get('/dashboard', async (c) => {
   const page = Number(c.req.query('page') ?? '1');
   const authStore = authStoreStub(c.env);
   const emailThreads = await authStore.getRecentEmailThreads(page, 10);
+  const recentLogins = await authStore.getRecentUserLogins(10);
   const workflows = await workflowStoreStub(c.env).getRecentWorkflowHistory(5);
   return c.html(
-    dashboardHtml(c.get('userEmail'), reminders, emailThreads, workflows, c.req.query('tab')),
+    dashboardHtml(
+      c.get('userEmail'),
+      reminders,
+      emailThreads,
+      workflows,
+      recentLogins,
+      CONFIGURED_MCP_SERVERS.map((server) => ({
+        ...server,
+        configured: server.secretName ? Boolean(c.env[server.secretName]) : true,
+      })),
+      [...BUNDLED_SKILLS],
+      c.req.query('tab'),
+    ),
   );
 });
 

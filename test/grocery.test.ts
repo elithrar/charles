@@ -24,6 +24,27 @@ describe('grocery service', () => {
     ]);
   });
 
+  it('plans account, delivery, and preference actions distinctly', () => {
+    expect(
+      parseGroceryCartActions(
+        'List my cart. When does my shopping window close? Skip next week. Always add oat milk. Never send cilantro.',
+      ),
+    ).toEqual([
+      { type: 'list-cart', raw: 'List my cart' },
+      { type: 'check-window', raw: 'When does my shopping window close' },
+      { type: 'skip-delivery', raw: 'Skip next week' },
+      { type: 'add-recurring', item: 'oat milk', raw: 'Always add oat milk' },
+      { type: 'block-item', item: 'cilantro', raw: 'Never send cilantro' },
+    ]);
+  });
+
+  it('plans combined cart and shopping-window reads', () => {
+    expect(parseGroceryCartActions('Show my current cart and shopping window.')).toEqual([
+      { type: 'list-cart', raw: 'Show my current cart and shopping window' },
+      { type: 'check-window', raw: 'Show my current cart and shopping window' },
+    ]);
+  });
+
   it('captures browser markdown when credentials are missing', async () => {
     const result = await runGroceryCartRequest(
       { prompt: 'Add pears.' },
