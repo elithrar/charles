@@ -25,9 +25,9 @@ vi.mock('../src/app.ts', () => ({
   default: { fetch: appFetch },
 }));
 
-function rawEmail(body = 'Hello Charles') {
+function rawEmail(body = 'Hello Charles', from = 'Matt <matt@eatsleeprepeat.net>') {
   return [
-    'From: Matt <matt@eatsleeprepeat.net>',
+    `From: ${from}`,
     'To: charles@questionable.services',
     'Subject: Test thread',
     'Message-ID: <message-1@example.com>',
@@ -43,10 +43,11 @@ function streamFromText(text: string) {
 }
 
 function emailMessage(overrides: Partial<ForwardableEmailMessage> = {}) {
+  const raw = overrides.raw ?? streamFromText(rawEmail());
   return {
     from: 'matt@eatsleeprepeat.net',
     to: 'charles@questionable.services',
-    raw: streamFromText(rawEmail()),
+    raw,
     rawSize: rawEmail().length,
     headers: new Headers(),
     setReject: vi.fn(),
@@ -132,5 +133,29 @@ describe('Cloudflare email handler', () => {
         replyText: 'Reply **body**',
       }),
     );
+  });
+
+  it('rejects non-allowlisted senders without workflow admission', async () => {
+    const { default: handler } = await import('../src/cloudflare.ts');
+    const message = emailMessage({
+      from: 'stranger@example.com',
+      raw: streamFromText(rawEmail('Hello Charles', 'Stranger <stranger@example.com>')),
+    });
+    const { ctx } = executionContext();
+
+    await handler.email?.(
+      message,
+      {
+        INTERNAL_AUTH_SECRET: 'internal-secret',
+      } as unknown as Env,
+      ctx,
+    );
+
+    expect(message.setReject).toHaveBeenCalledWith(
+      'This address is not authorized to use Charles.',
+    );
+    expect(message.reply).not.toHaveBeenCalled();
+    expect(appFetch).not.toHaveBeenCalled();
+    expect(ctx.waitUntil).not.toHaveBeenCalled();
   });
 });

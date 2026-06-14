@@ -1,5 +1,4 @@
 import { createAgent, type FlueContext, type WorkflowRouteHandler } from '@flue/runtime';
-import * as v from 'valibot';
 import { DEFAULT_MODEL, DEFAULT_THINKING_LEVEL } from '../config.ts';
 import {
   classifyEmailIntent,
@@ -38,8 +37,6 @@ const responder = createAgent((_context) => ({
 
 ${BROWSER_RUN_AGENT_INSTRUCTIONS}`,
 }));
-
-const responseSchema = v.object({ replyText: v.string() });
 
 function workflowReply(result: InternalWorkflowResult) {
   const summary = summarizeWorkflowResult(result);
@@ -103,8 +100,7 @@ export async function run({ init, payload, env }: FlueContext<InboundEmailPayloa
   const session = await harness.session('email');
   const response = await session.prompt(
     `Subject: ${payload.subject}\n\nMessage:\n${payload.text}\n\nClassified intent: ${intent}. Reply by email.`,
-    { result: responseSchema },
   );
 
-  return { intent, ...response.data };
+  return { intent, replyText: response.text };
 }

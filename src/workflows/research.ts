@@ -17,6 +17,11 @@ type ResearchPayload = {
 
 export const route: WorkflowRouteHandler = async (_c, next) => next();
 
+function extractCitationUrls(text: string): Array<{ url: string; summary: string }> {
+  const urls = [...text.matchAll(/https?:\/\/[^\s)\],.]+/g)].map((match) => match[0]);
+  return [...new Set(urls)].map((url) => ({ url, summary: 'Referenced in research answer.' }));
+}
+
 const GITHUB_MCP_AGENT_INSTRUCTIONS = `
 <github_mcp_tool>
 Use the GitHub MCP tools for GitHub tasks the user asks you to do: inspect repositories and files, search code, read issues and pull requests, manage issues and pull requests, inspect Actions runs, and gather repository context.
@@ -68,6 +73,7 @@ const researcher = createAgent((_context) => ({
 
 <rules>
 - Cite URLs used as evidence.
+- Return at least one citation for source-backed claims whenever tools provide source URLs.
 - Prefer fetched/source evidence over model memory for current facts.
 - State uncertainty when a tool is unavailable or sources conflict.
 </rules>
@@ -149,6 +155,7 @@ export async function run({ init, payload, env }: FlueContext<ResearchPayload, E
 
     return {
       answer: response.text,
+      citations: extractCitationUrls(response.text),
       githubMcpEnabled: Boolean(github),
       exaMcpEnabled: Boolean(exa),
       resyMcpEnabled: Boolean(resy),

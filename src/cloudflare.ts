@@ -119,7 +119,15 @@ async function buildWorkflowReply(
   try {
     const response = await app.fetch(request, env, ctx);
     if (!response.ok) {
-      logEvent('error', 'email.workflow_admission_failed', { status: response.status });
+      const bodyPreview = await response
+        .clone()
+        .text()
+        .then((text) => text.slice(0, 500))
+        .catch(() => '');
+      logEvent('error', 'email.workflow_admission_failed', {
+        status: response.status,
+        bodyPreview,
+      });
       return EMAIL_WORKFLOW_FAILURE_REPLY;
     }
 

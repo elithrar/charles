@@ -65,7 +65,19 @@ export function summarizeWorkflowResult(result: InternalWorkflowResult): string 
   if (value && typeof value === 'object') {
     const record = value as Record<string, unknown>;
     if (typeof record.answer === 'string') {
-      return record.answer.slice(0, 500);
+      const citations = Array.isArray(record.citations)
+        ? record.citations
+            .map((citation) =>
+              citation && typeof citation === 'object' && 'url' in citation
+                ? String(citation.url)
+                : '',
+            )
+            .filter(Boolean)
+        : [];
+      return `${record.answer}${citations.length ? `\n\nSources: ${citations.join(', ')}` : ''}`.slice(
+        0,
+        500,
+      );
     }
     if (Array.isArray(record.actionsTaken) || Array.isArray(record.reviewRequired)) {
       const actions = Array.isArray(record.actionsTaken) ? record.actionsTaken.join(', ') : 'none';

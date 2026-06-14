@@ -7,7 +7,7 @@ This file tracks what is still incomplete or risky in the current Charles app. K
 - [x] Project deploys as Cloudflare Worker `charles` with Flue-generated config from `dist/charles/wrangler.json`.
 - [x] Main checks pass: `pnpm format:check`, `pnpm typecheck`, `pnpm lint`, `pnpm test`, `pnpm build`.
 - [x] Generated deploy dry-run passes with `pnpm exec wrangler deploy --dry-run --config dist/charles/wrangler.json`.
-- [x] Live deploy succeeds; latest verified version is `17ce9813-e004-49cf-b057-95152db3579d`.
+- [x] Live deploy succeeds; latest verified version is `0ec150b8-21ee-422a-bf02-a61098f5422a`.
 - [x] Public live route smoke passes for `/`, `/login`, `/health`, and `/kumo.css`.
 - [x] Anonymous `/dashboard` returns `401`.
 - [x] Root `.gitignore` excludes `.dev.vars`, `.dev.vars.*`, `.env*`, `dist`, `.flue-vite`, `.wrangler`, `worker-configuration.d.ts`, and test output.
@@ -21,7 +21,10 @@ This file tracks what is still incomplete or risky in the current Charles app. K
 - [x] Email replies preserve `References` and `In-Reply-To` headers where available.
 - [x] Allowlisted inbound email enters `/workflows/email-prompt?wait=result` through an internal authenticated app route.
 - [x] `email-prompt` routes grocery, research, and parts requests through protected Flue workflow HTTP admission instead of direct `run()` calls.
-- [ ] Add a Cloudflare email handler test proving non-allowlisted senders reject without workflow admission.
+- [x] Add a Cloudflare email handler test proving non-allowlisted senders reject without workflow admission.
+- [x] Investigate recent `email.workflow_admission_failed` events. Root cause was Flue/OpenAI structured result extraction after Browser Run tool calls: `Item with id ... not found. Items are not persisted when store is false`.
+- [x] Remove structured result extraction from tool-using email/research paths and log failed internal workflow response previews for future diagnosis.
+- [x] Confirm no `email.workflow_admission_failed` events exist for deployed version `0ec150b8-21ee-422a-bf02-a61098f5422a` immediately after deploy.
 - [ ] Run a live inbound email smoke test from an allowlisted sender after each meaningful email/workflow routing change.
 
 ## Scheduler
@@ -46,7 +49,7 @@ This file tracks what is still incomplete or risky in the current Charles app. K
 - [ ] Verify live add/remove/update quantity flows against real selectors with low-risk test items; do not place an order.
 - [ ] Verify skip-delivery flow against the real schedule UI with explicit user approval before clicking a live skip control.
 - [ ] Verify recurring/favorite and block/exclude preference flows against real account/product UI.
-- [ ] Add automated smoke coverage for inspect-only authenticated browsing without relying on ignored `.wrangler/tmp` harness files.
+- [x] Add committed grocery smoke Worker for inspect-only authenticated browsing without relying on ignored `.wrangler/tmp` harness files.
 
 ## Research And Parts
 
@@ -54,8 +57,8 @@ This file tracks what is still incomplete or risky in the current Charles app. K
 - [x] Research workflow connects GitHub MCP when `GITHUB_MCP_PAT` is configured.
 - [x] Research workflow connects Exa MCP when `EXA_API_KEY` is configured.
 - [x] Research workflow connects Resy MCP at `https://apigw.americanexpress.com/dining/v1/mcp`.
-- [ ] Require or validate citations/fetched-source summaries for research answers instead of model-only synthesis.
-- [ ] Add tests proving email-prompt research classification invokes the research workflow path.
+- [x] Require source-backed research answers in prompt instructions and extract citation URLs from research text results.
+- [x] Add tests proving email-prompt research classification invokes the research workflow path.
 - [ ] Add Browser Run-backed research tests for prompts with supplied URLs and prompts without URLs.
 - [ ] Expand parts-search beyond the current stub with realistic Pelican/eBay/repair-source requests and result summaries.
 
@@ -79,6 +82,6 @@ This file tracks what is still incomplete or risky in the current Charles app. K
 
 - [x] `AGENTS.md` captures current repo-specific commands, architecture, Cloudflare gotchas, Kumo-first UI rule, and generated-file policy.
 - [x] `docs/OPERATIONS.md` documents secrets, deploy, Email Routing, scheduler, and smoke-test operations.
-- [ ] Add a documented, repeatable grocery Browser Run smoke command that does not expose secrets and does not require temporary ignored source files.
+- [x] Add a documented, repeatable grocery Browser Run smoke command that does not expose secrets and does not require temporary ignored source files.
 - [ ] Keep local `.dev.vars` aligned with supported aliases without committing secrets: `BETTER_AUTH_SECRET`, `INTERNAL_AUTH_SECRET`, `OPENAI_API_KEY`, `GITHUB_MCP_PAT`, `EXA_API_KEY`, Imperfect credentials, and optional `PUBLIC_ORIGIN`/`BETTER_AUTH_URL`.
 - [ ] Normalize additional user-visible app errors with `better-result` where it clarifies failure handling.
