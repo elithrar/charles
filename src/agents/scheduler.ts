@@ -1,7 +1,7 @@
 import { createAgent, dispatch } from '@flue/runtime';
 import { extend, getCloudflareContext } from '@flue/runtime/cloudflare';
 import { ALLOWLISTED_USERS, DEFAULT_TIMEZONE } from '../config.ts';
-import { defaultFromIdentity } from '../email.ts';
+import { sendCharlesEmail } from '../email.ts';
 import { logEvent } from '../logging.ts';
 import { runGroceryCartRequest } from '../services/grocery.ts';
 import {
@@ -32,11 +32,19 @@ export const cloudflare = extend({
           existingId &&
           schedules.some((schedule: { id: string }) => schedule.id === existingId)
         ) {
+          logEvent('info', 'scheduler.schedule_ready', {
+            scheduleId: existingId,
+            scheduleCount: schedules.length,
+          });
           return;
         }
 
         const schedule = await this.scheduleEvery(60 * 60, 'sendFridayGroceryReminderIfDue');
         this.setState({ ...this.state, groceryReminderScheduleId: schedule.id });
+        logEvent('info', 'scheduler.schedule_installed', {
+          scheduleId: schedule.id,
+          scheduleCount: schedules.length + 1,
+        });
       }
 
       async getScheduleState() {
@@ -62,7 +70,9 @@ export const cloudflare = extend({
 
       async repairSchedules() {
         await this.onStart();
-        return this.getScheduleState();
+        const state = await this.getScheduleState();
+        logEvent('info', 'scheduler.schedule_repaired', state);
+        return state;
       }
 
       async sendFridayGroceryReminderIfDue() {
@@ -128,8 +138,7 @@ export const cloudflare = extend({
           grocery: grocery.value,
         });
 
-        await env.EMAIL.send({
-          from: defaultFromIdentity(env),
+        await sendCharlesEmail(env, {
           to: [...ALLOWLISTED_USERS],
           subject: summary.subject,
           text: summary.text,

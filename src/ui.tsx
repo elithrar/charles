@@ -471,21 +471,6 @@ function pageShell(title: string, content: ReactNode, script?: string) {
   )}`;
 }
 
-const passkeyClientScript = `
-async function createCharlesAuthClient(statusElement) {
-  try {
-    const [{ createAuthClient }, { passkeyClient }] = await Promise.all([
-      import('https://esm.sh/better-auth/client'),
-      import('https://esm.sh/@better-auth/passkey/client'),
-    ]);
-    return createAuthClient({ baseURL: '/api/auth', plugins: [passkeyClient()] });
-  } catch (error) {
-    statusElement.textContent = 'Passkey support could not load in this browser session.';
-    return null;
-  }
-}
-`;
-
 export function homeHtml() {
   return `<!doctype html>${renderToStaticMarkup(
     <html lang="en">
@@ -541,14 +526,6 @@ export function loginHtml() {
             <Button type="submit" variant="primary" className="w-full justify-center">
               Send magic link
             </Button>
-            <Button
-              type="button"
-              id="passkey-sign-in"
-              variant="secondary"
-              className="w-full justify-center"
-            >
-              Continue with passkey
-            </Button>
           </form>
           <Text
             id="status"
@@ -560,8 +537,7 @@ export function loginHtml() {
         </LayerCard>
       </section>
     </main>,
-    `${passkeyClientScript}
-    document.getElementById('sign-in-form').addEventListener('submit', async (event) => {
+    `document.getElementById('sign-in-form').addEventListener('submit', async (event) => {
       event.preventDefault();
       const email = new FormData(event.currentTarget).get('email');
       const response = await fetch('/api/auth/sign-in/magic-link', {
@@ -570,18 +546,6 @@ export function loginHtml() {
         body: JSON.stringify({ email, callbackURL: '/dashboard' }),
       });
       document.getElementById('status').textContent = response.ok ? 'Check your email for a sign-in link.' : 'Sign-in failed.';
-    });
-    document.getElementById('passkey-sign-in').addEventListener('click', async () => {
-      const status = document.getElementById('status');
-      status.textContent = 'Waiting for passkey...';
-      const authClient = await createCharlesAuthClient(status);
-      if (!authClient) return;
-      const result = await authClient.signIn.passkey();
-      if (result.error) {
-        status.textContent = result.error.message || 'Passkey sign-in failed.';
-        return;
-      }
-      window.location.href = '/dashboard';
     });`,
   );
 }

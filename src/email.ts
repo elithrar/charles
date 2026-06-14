@@ -98,6 +98,24 @@ export function defaultFromIdentity(env: Pick<Env, 'AGENT_FROM_EMAIL'>) {
   return { email: defaultFromAddress(env), name: AGENT_FROM_NAME };
 }
 
+export async function sendCharlesEmail(
+  env: Pick<Env, 'AGENT_FROM_EMAIL' | 'EMAIL'>,
+  message: {
+    to: string | string[];
+    subject: string;
+    text: string;
+    headers?: Record<string, string>;
+  },
+) {
+  return env.EMAIL.send({
+    from: defaultFromIdentity(env),
+    to: message.to,
+    subject: message.subject,
+    text: message.text,
+    headers: message.headers,
+  });
+}
+
 export function formatEmailAddress(identity: { email: string; name: string }): string {
   const name = identity.name.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
   return `"${name}" <${identity.email}>`;

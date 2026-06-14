@@ -1,4 +1,3 @@
-import { passkey } from '@better-auth/passkey';
 import { betterAuth } from 'better-auth';
 import { APIError } from 'better-auth/api';
 import { magicLink } from 'better-auth/plugins';
@@ -69,10 +68,6 @@ export function createCharlesAuth(env: CharlesEnv, requestUrl: string) {
             text: `Open this link to sign in to Charles.\n\n${url}`,
           });
         },
-      }),
-      passkey({
-        rpName: 'Charles',
-        origin: baseURL,
       }),
     ],
   });

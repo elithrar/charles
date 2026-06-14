@@ -1,10 +1,11 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   classifyEmailIntent,
   defaultFromIdentity,
   formatEmailAddress,
   normalizeEmailAddress,
   requireAllowlistedSender,
+  sendCharlesEmail,
 } from '../src/email.ts';
 
 function unwrap<T>(result: { value?: T; error?: unknown }) {
@@ -42,6 +43,28 @@ describe('email helpers', () => {
     });
     expect(formatEmailAddress(identity)).toBe(
       '"Charles, your Agent" <charles@questionable.services>',
+    );
+  });
+
+  it('sends outbound mail with the Charles identity', async () => {
+    const send = vi.fn(async () => ({ messageId: 'message-id' }));
+
+    await sendCharlesEmail(
+      { AGENT_FROM_EMAIL: 'charles@questionable.services', EMAIL: { send } } as unknown as Env,
+      {
+        to: 'matt@eatsleeprepeat.net',
+        subject: 'Hello',
+        text: 'Body',
+      },
+    );
+
+    expect(send).toHaveBeenCalledWith(
+      expect.objectContaining({
+        from: { email: 'charles@questionable.services', name: 'Charles, your Agent' },
+        to: 'matt@eatsleeprepeat.net',
+        subject: 'Hello',
+        text: 'Body',
+      }),
     );
   });
 });

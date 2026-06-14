@@ -13,6 +13,7 @@ import {
   emailErrorMessage,
   formatEmailAddress,
   requireAllowlistedSender,
+  sendCharlesEmail,
   type InboundEmailPayload,
 } from './email.ts';
 import { logEvent } from './logging.ts';
@@ -73,8 +74,7 @@ async function replyToEmail(
     logEvent('warn', 'email.reply_failed_fallback_send', { error: String(error) });
   }
 
-  await env.EMAIL.send({
-    from: fromIdentity,
+  await sendCharlesEmail(env, {
     to: payload.from,
     subject,
     text,

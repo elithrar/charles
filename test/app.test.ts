@@ -119,8 +119,9 @@ describe('app routes', () => {
     expect(html).toContain('/kumo.css');
     expect(html).toContain('charles-login-card');
     expect(html).toContain('#F5F4EC');
-    expect(html).toContain('passkey-sign-in');
+    expect(html).not.toContain('passkey-sign-in');
     expect(html).toContain('/api/auth/sign-in/magic-link');
+    expect(html).not.toContain('@better-auth/passkey');
   });
 
   it('serves Kumo styles', async () => {

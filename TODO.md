@@ -7,7 +7,7 @@ This file tracks what is still incomplete or risky in the current Charles app. K
 - [x] Project deploys as Cloudflare Worker `charles` with Flue-generated config from `dist/charles/wrangler.json`.
 - [x] Main checks pass: `pnpm format:check`, `pnpm typecheck`, `pnpm lint`, `pnpm test`, `pnpm build`.
 - [x] Generated deploy dry-run passes with `pnpm exec wrangler deploy --dry-run --config dist/charles/wrangler.json`.
-- [x] Live deploy succeeds; latest verified version is `0ec150b8-21ee-422a-bf02-a61098f5422a`.
+- [x] Live deploy succeeds; latest verified version is `07e5c5ee-5dfc-470b-8e91-fd9ea7e25e89`.
 - [x] Public live route smoke passes for `/`, `/login`, `/health`, and `/kumo.css`.
 - [x] Anonymous `/dashboard` returns `401`.
 - [x] Root `.gitignore` excludes `.dev.vars`, `.dev.vars.*`, `.env*`, `dist`, `.flue-vite`, `.wrangler`, `worker-configuration.d.ts`, and test output.
@@ -24,7 +24,7 @@ This file tracks what is still incomplete or risky in the current Charles app. K
 - [x] Add a Cloudflare email handler test proving non-allowlisted senders reject without workflow admission.
 - [x] Investigate recent `email.workflow_admission_failed` events. Root cause was Flue/OpenAI structured result extraction after Browser Run tool calls: `Item with id ... not found. Items are not persisted when store is false`.
 - [x] Remove structured result extraction from tool-using email/research paths and log failed internal workflow response previews for future diagnosis.
-- [x] Confirm no `email.workflow_admission_failed` events exist for deployed version `0ec150b8-21ee-422a-bf02-a61098f5422a` immediately after deploy.
+- [x] Confirm no `email.workflow_admission_failed` events exist for deployed version `07e5c5ee-5dfc-470b-8e91-fd9ea7e25e89` immediately after deploy.
 - [ ] Run a live inbound email smoke test from an allowlisted sender after each meaningful email/workflow routing change.
 
 ## Scheduler
@@ -33,9 +33,10 @@ This file tracks what is still incomplete or risky in the current Charles app. K
 - [x] Friday grocery reminder idempotency is claimed before side effects.
 - [x] Internal scheduler routes exist for reminders, state, bootstrap/repair, and test grocery reminder.
 - [x] App route tests cover internal scheduler state, repair/bootstrap, reminders, and forced reminder route admission.
-- [ ] Verify in production logs that `onStart()` installed the recurring hourly schedule after deploy.
+- [x] Scheduler lifecycle emits structured `scheduler.schedule_ready`, `scheduler.schedule_installed`, and `scheduler.schedule_repaired` logs.
+- [ ] Verify in production logs that `onStart()` installed or reused the recurring hourly schedule after the scheduler Durable Object next starts.
 - [ ] Add direct scheduler Durable Object tests for overlapping reminder idempotency and schedule repair behavior.
-- [ ] Consider sharing email construction between scheduler reminders and inbound email replies.
+- [x] Scheduler reminders and inbound email fallback share the same outbound Charles email construction helper.
 
 ## Grocery And Imperfect Foods
 
@@ -72,11 +73,11 @@ This file tracks what is still incomplete or risky in the current Charles app. K
 - [x] Settings shows the last 10 user login sessions with email and timestamp.
 - [x] Settings lists configured MCP servers and whether required secrets are present.
 - [x] Settings lists bundled skills.
-- [x] Passkey sign-in UI exists on the login page; Settings no longer exposes passkey enrollment.
-- [ ] Live-test magic-link sign-in and passkey sign-in in a real browser, or remove passkey support entirely if it is no longer desired.
+- [x] Passkey support was removed; login is magic-link only.
+- [ ] Live-test magic-link sign-in in a real browser.
 - [ ] Replace dashboard summaries with richer Flue run/session metadata if available from generated Flue stores.
 - [ ] Show separate recent grocery, research, and parts-search histories when workflow metadata is sufficient.
-- [ ] Add integration tests for Better Auth Durable Object adapter: magic-link token create/consume, session create/read/delete, allowlist enforcement, and passkey credential persistence.
+- [ ] Add integration tests for Better Auth Durable Object adapter: magic-link token create/consume, session create/read/delete, and allowlist enforcement.
 
 ## Operations And Docs
 
