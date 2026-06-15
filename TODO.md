@@ -7,7 +7,7 @@ This file tracks what is still incomplete or risky in the current Charles app. K
 - [x] Project deploys as Cloudflare Worker `charles` with Flue-generated config from `dist/charles/wrangler.json`.
 - [x] Main checks pass: `pnpm format:check`, `pnpm typecheck`, `pnpm lint`, `pnpm test`, `pnpm build`.
 - [x] Generated deploy dry-run passes with `pnpm exec wrangler deploy --dry-run --config dist/charles/wrangler.json`.
-- [x] Live deploy succeeds; latest verified version is `370f4afe-ab06-4cac-b776-47672da4e87a`.
+- [x] Live deploy succeeds; latest verified version is `37ca21ba-a2e3-4d7d-b76a-4779137806a3`.
 - [x] Public live route smoke passes for `/`, `/login`, `/health`, and `/kumo.css`.
 - [x] Anonymous `/dashboard` returns `401`.
 - [x] Root `.gitignore` excludes `.dev.vars`, `.dev.vars.*`, `.env*`, `dist`, `.flue-vite`, `.wrangler`, `worker-configuration.d.ts`, and test output.
@@ -22,10 +22,10 @@ This file tracks what is still incomplete or risky in the current Charles app. K
 - [x] Allowlisted inbound email enters `/workflows/email-prompt?wait=result` through an internal authenticated app route.
 - [x] `email-prompt` routes grocery, research, and parts requests through protected Flue workflow HTTP admission instead of direct `run()` calls.
 - [x] Add a Cloudflare email handler test proving non-allowlisted senders reject without workflow admission.
-- [x] Investigate recent `email.workflow_admission_failed` events. Root cause was Flue/OpenAI structured result extraction after Browser Run tool calls: `Item with id ... not found. Items are not persisted when store is false`.
-- [x] Remove structured result extraction from tool-using email/research paths and log failed internal workflow response previews for future diagnosis.
-- [x] Confirm no `email.workflow_admission_failed` events exist for deployed version `07e5c5ee-5dfc-470b-8e91-fd9ea7e25e89` immediately after deploy.
-- [ ] Run a live inbound email smoke test from an allowlisted sender after each meaningful email/workflow routing change.
+- [x] Investigate recent email failures. Root causes were OpenAI Responses item persistence (`store: false` with tool-call continuations) and fixed shared Flue session names across one-shot workflow runs.
+- [x] Enable OpenAI Responses persistence for `opencode-zen`, use per-run email/research Flue sessions, and log failed internal workflow response previews for future diagnosis.
+- [x] Confirm live inbound email smoke passed from an allowlisted sender after deploy `37ca21ba-a2e3-4d7d-b76a-4779137806a3`.
+- [ ] Render outbound email HTML from Markdown with `react-email`: keep Markdown as the source format, produce minimal HTML, and support bold text, links, images, lists, and a plain-text fallback.
 
 ## Scheduler
 
