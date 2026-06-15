@@ -35,6 +35,36 @@ describe('email helpers', () => {
     expect(classifyEmailIntent('hello', 'what is on my calendar?')).toBe('general');
   });
 
+  it('does not treat generic part phrasing as automotive parts search', () => {
+    expect(classifyEmailIntent('Browser Run', 'What part of Browser Run handles PDFs?')).toBe(
+      'general',
+    );
+  });
+
+  it('classifies fitment questions with a car and part number as parts search', () => {
+    expect(
+      classifyEmailIntent(
+        '1988 Porsche 911 Carrera 3.2',
+        'Will Bosch 0280150201 fit my injector harness?',
+      ),
+    ).toBe('parts-search');
+  });
+
+  it('classifies automotive parts procurement requests as parts search', () => {
+    expect(
+      classifyEmailIntent(
+        '1988 Porsche 911 Carrera 3.2',
+        'Where can I buy engine mounts for this car?',
+      ),
+    ).toBe('parts-search');
+  });
+
+  it('classifies RockAuto-only automotive source requests as parts search', () => {
+    expect(classifyEmailIntent('1988 Porsche 911 Carrera 3.2', 'Check RockAuto.')).toBe(
+      'parts-search',
+    );
+  });
+
   it('formats Charles from identity with display name', () => {
     const identity = defaultFromIdentity({ AGENT_FROM_EMAIL: 'charles@questionable.services' });
     expect(identity).toEqual({

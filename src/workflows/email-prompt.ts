@@ -3,8 +3,10 @@ import { DEFAULT_MODEL, DEFAULT_THINKING_LEVEL } from '../config.ts';
 import {
   classifyEmailIntent,
   requireAllowlistedSender,
+  type EmailIntent,
   type InboundEmailPayload,
 } from '../email.ts';
+import { logEvent } from '../logging.ts';
 import {
   invokeInternalWorkflow,
   recordWorkflowHistory,
@@ -38,20 +40,44 @@ const responder = createAgent((_context) => ({
 ${BROWSER_RUN_AGENT_INSTRUCTIONS}`,
 }));
 
-function workflowReply(result: InternalWorkflowResult) {
+const GENERAL_REPLY_UNAVAILABLE =
+  'Charles received your message, but the AI reply service is unavailable right now. Please try again later.';
+
+function unavailableReply(intent: EmailIntent) {
+  if (intent === 'grocery') {
+    return 'Charles received your grocery request, but that workflow is unavailable right now. Please try again later.';
+  }
+
+  if (intent === 'parts-search') {
+    return 'Charles could not complete that parts research right now because the AI research service is unavailable. Please try again later. Confirm the car, year, submodel, and VIN-sensitive fitment before ordering.';
+  }
+
+  if (intent === 'research') {
+    return 'Charles could not complete that research right now because the AI research service is unavailable. Please try again later.';
+  }
+
+  return GENERAL_REPLY_UNAVAILABLE;
+}
+
+function workflowReply(result: InternalWorkflowResult, intent: EmailIntent) {
+  if (!result.ok) {
+    return unavailableReply(intent);
+  }
+
   const summary = summarizeWorkflowResult(result);
   if (result.workflow === 'grocery-cart') {
     return `I reviewed the grocery request. Checkout is blocked. ${summary}`;
   }
-  if (result.workflow === 'research') {
-    return summary;
+  if (intent === 'parts-search') {
+    return `${summary}. Confirm the car, year, submodel, and VIN-sensitive fitment before ordering.`;
   }
-  return `${summary}. Confirm the car, year, submodel, and VIN-sensitive fitment before ordering.`;
+  return summary;
 }
 
 async function routeToChildWorkflow(
   env: Env,
   payload: InboundEmailPayload,
+  intent: EmailIntent,
   workflow: 'grocery-cart' | 'research',
   childPayload: unknown,
 ) {
@@ -65,18 +91,35 @@ async function routeToChildWorkflow(
     },
   });
   const summary = summarizeWorkflowResult(result);
-  await recordWorkflowHistory(env, {
-    workflow,
-    status: result.ok ? 'ok' : 'error',
-    subject: payload.subject,
-    requestedBy: userEmail,
-    summary,
-    createdAt: new Date().toISOString(),
-  });
+  if (!result.ok) {
+    logEvent('warn', 'email_prompt.child_workflow_failed', {
+      intent,
+      workflow,
+      status: result.status,
+      requestedBy: userEmail,
+    });
+  }
+  try {
+    await recordWorkflowHistory(env, {
+      workflow,
+      status: result.ok ? 'ok' : 'error',
+      subject: payload.subject,
+      requestedBy: userEmail,
+      summary,
+      createdAt: new Date().toISOString(),
+    });
+  } catch (error) {
+    logEvent('error', 'email_prompt.history_record_failed', {
+      intent,
+      workflow,
+      requestedBy: userEmail,
+      error: String(error),
+    });
+  }
 
   return {
-    intent: classifyEmailIntent(payload.subject, payload.text),
-    replyText: workflowReply(result),
+    intent,
+    replyText: workflowReply(result, intent),
     childWorkflow: result,
   };
 }
@@ -84,26 +127,33 @@ async function routeToChildWorkflow(
 export async function run({ init, payload, env }: FlueContext<InboundEmailPayload, Env>) {
   const intent = classifyEmailIntent(payload.subject, payload.text);
 
-  if (intent === 'grocery') {
-    return routeToChildWorkflow(env, payload, 'grocery-cart', { prompt: payload.text });
+  try {
+    if (intent === 'grocery') {
+      return await routeToChildWorkflow(env, payload, intent, 'grocery-cart', {
+        prompt: payload.text,
+      });
+    }
+
+    if (intent === 'parts-search') {
+      return await routeToChildWorkflow(env, payload, intent, 'research', {
+        prompt: payload.text,
+        mode: 'parts-search',
+      });
+    }
+
+    if (intent === 'research') {
+      return await routeToChildWorkflow(env, payload, intent, 'research', { prompt: payload.text });
+    }
+
+    const harness = await init(responder);
+    const session = await harness.session('email');
+    const response = await session.prompt(
+      `Subject: ${payload.subject}\n\nMessage:\n${payload.text}\n\nClassified intent: ${intent}. Reply by email.`,
+    );
+
+    return { intent, replyText: response.text };
+  } catch (error) {
+    logEvent('error', 'email_prompt.run_failed', { intent, error: String(error) });
+    return { intent, replyText: unavailableReply(intent) };
   }
-
-  if (intent === 'parts-search') {
-    return routeToChildWorkflow(env, payload, 'research', {
-      prompt: payload.text,
-      mode: 'parts-search',
-    });
-  }
-
-  if (intent === 'research') {
-    return routeToChildWorkflow(env, payload, 'research', { prompt: payload.text });
-  }
-
-  const harness = await init(responder);
-  const session = await harness.session('email');
-  const response = await session.prompt(
-    `Subject: ${payload.subject}\n\nMessage:\n${payload.text}\n\nClassified intent: ${intent}. Reply by email.`,
-  );
-
-  return { intent, replyText: response.text };
 }

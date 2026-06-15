@@ -136,12 +136,25 @@ async function connectResyMcp(): Promise<McpServerConnection | null> {
   });
 }
 
-export async function run({ init, payload, env }: FlueContext<ResearchPayload, Env>) {
+async function connectResearchMcpTools(env: Env, mode: ResearchPayload['mode']) {
+  if (mode === 'parts-search') {
+    return {
+      github: null,
+      exa: await connectExaMcp(env),
+      resy: null,
+    };
+  }
+
   const [github, exa, resy] = await Promise.all([
     connectGitHubMcp(env),
     connectExaMcp(env),
     connectResyMcp(),
   ]);
+  return { github, exa, resy };
+}
+
+export async function run({ init, payload, env }: FlueContext<ResearchPayload, Env>) {
+  const { github, exa, resy } = await connectResearchMcpTools(env, payload.mode);
   try {
     const harness = await init(researcher, {
       tools: [...(github?.tools ?? []), ...(exa?.tools ?? []), ...(resy?.tools ?? [])],

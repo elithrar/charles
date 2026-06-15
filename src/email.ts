@@ -51,12 +51,25 @@ export function requireAllowlistedSender(input: string): AppResult<string> {
 
 export function classifyEmailIntent(subject: string, text: string): EmailIntent {
   const content = `${subject}\n${text}`.toLowerCase();
+  const hasAutomotivePartsVendor = /\b(fcp euro|pelican|blunttech|rockauto|part number)\b/.test(
+    content,
+  );
+  const hasAutomotiveMakeOrModel = /\b(911|porsche|2002|bmw)\b/.test(content);
+  const hasFitmentLanguage = /\b(fit|fits|fitment)\b/.test(content);
+  const hasGenericPartsWord = /\bparts?\b/.test(content);
+  const hasPartNumberPattern = /\b(?:[a-z]{0,3}\d[\da-z-]{4,}|\d{6,})\b/.test(content);
+  const hasProcurementLanguage =
+    /\b(buy|order|price|cost|stock|available|availability|where can i buy)\b/.test(content);
 
   if (/\b(grocery|groceries|imperfect|produce|cart|order box|shopping list)\b/.test(content)) {
     return 'grocery';
   }
 
-  if (/\b(fcp euro|pelican|blunttech|part number|parts?|911|porsche|2002|bmw)\b/.test(content)) {
+  if (
+    hasAutomotivePartsVendor ||
+    (hasAutomotiveMakeOrModel &&
+      (hasGenericPartsWord || hasFitmentLanguage || hasPartNumberPattern || hasProcurementLanguage))
+  ) {
     return 'parts-search';
   }
 
