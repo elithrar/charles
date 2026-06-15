@@ -10,7 +10,7 @@ import { createCharlesAuth } from './auth.ts';
 import type { EmailThreadMessage, EmailThreadPage, UserLoginSummary } from './auth-store.ts';
 import type { GroceryReminderSummary } from './services/scheduler.ts';
 import type { CharlesEnv } from './types.ts';
-import type { WorkflowHistorySummary } from './workflow-store.ts';
+import { flueAdmin, getDashboardWorkflowRuns } from './services/flue-runs.ts';
 import kumoStyles from '@cloudflare/kumo/styles/standalone?raw';
 import {
   dashboardHtml,
@@ -53,10 +53,6 @@ type AuthStoreRpcStub = {
   getRecentUserLogins(limit?: number): Promise<UserLoginSummary[]>;
 };
 
-type WorkflowStoreRpcStub = {
-  getRecentWorkflowHistory(limit?: number): Promise<WorkflowHistorySummary[]>;
-};
-
 function isInternalRequest(c: {
   env: CharlesEnv;
   req: { header(name: string): string | undefined };
@@ -76,10 +72,6 @@ function schedulerStub(env: CharlesEnv): SchedulerRpcStub | null {
 
 function authStoreStub(env: CharlesEnv): AuthStoreRpcStub {
   return env.AUTH_STORE.getByName('default') as unknown as AuthStoreRpcStub;
-}
-
-function workflowStoreStub(env: CharlesEnv): WorkflowStoreRpcStub {
-  return env.WORKFLOW_STORE.getByName('default') as unknown as WorkflowStoreRpcStub;
 }
 
 const requireUser: MiddlewareHandler<{ Bindings: CharlesEnv; Variables: AppVariables }> = async (
@@ -141,6 +133,8 @@ app.use('/dashboard', requireUser);
 app.use('/dashboard/*', requireUser);
 app.use('/internal/*', requireUser);
 
+app.route('/internal/flue', flueAdmin);
+
 app.get('/dashboard', async (c) => {
   const scheduler = schedulerStub(c.env);
   const reminders = scheduler ? await scheduler.getRecentGroceryReminders(5) : [];
@@ -148,7 +142,7 @@ app.get('/dashboard', async (c) => {
   const authStore = authStoreStub(c.env);
   const emailThreads = await authStore.getRecentEmailThreads(page, 10);
   const recentLogins = await authStore.getRecentUserLogins(10);
-  const workflows = await workflowStoreStub(c.env).getRecentWorkflowHistory(5);
+  const workflows = await getDashboardWorkflowRuns(c.env, 5);
   return c.html(
     dashboardHtml(
       c.get('userEmail'),

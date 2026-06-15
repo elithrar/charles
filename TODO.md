@@ -25,7 +25,7 @@ This file tracks what is still incomplete or risky in the current Charles app. K
 - [x] Investigate recent email failures. Root causes were OpenAI Responses item persistence (`store: false` with tool-call continuations) and fixed shared Flue session names across one-shot workflow runs.
 - [x] Enable OpenAI Responses persistence for `opencode-zen`, use per-run email/research Flue sessions, and log failed internal workflow response previews for future diagnosis.
 - [x] Confirm live inbound email smoke passed from an allowlisted sender after deploy `37ca21ba-a2e3-4d7d-b76a-4779137806a3`.
-- [ ] Render outbound email HTML from Markdown with `react-email`: keep Markdown as the source format, produce minimal HTML, and support bold text, links, images, lists, and a plain-text fallback.
+- [x] Render outbound email HTML from Markdown with `react-email`: keep Markdown as the source format, produce minimal HTML, and support bold text, links, images, lists, and a plain-text fallback.
 
 ## Scheduler
 
@@ -35,7 +35,7 @@ This file tracks what is still incomplete or risky in the current Charles app. K
 - [x] App route tests cover internal scheduler state, repair/bootstrap, reminders, and forced reminder route admission.
 - [x] Scheduler lifecycle emits structured `scheduler.schedule_ready`, `scheduler.schedule_installed`, and `scheduler.schedule_repaired` logs.
 - [ ] Verify in production logs that `onStart()` installed or reused the recurring hourly schedule after the scheduler Durable Object next starts.
-- [ ] Add direct scheduler Durable Object tests for overlapping reminder idempotency and schedule repair behavior.
+- [x] Add focused scheduler tests for overlapping reminder idempotency and schedule repair state behavior.
 - [x] Scheduler reminders and inbound email fallback share the same outbound Charles email construction helper.
 
 ## Grocery And Imperfect Foods
@@ -61,7 +61,7 @@ This file tracks what is still incomplete or risky in the current Charles app. K
 - [x] Require source-backed research answers in prompt instructions and extract citation URLs from research text results.
 - [x] Add tests proving email-prompt research classification invokes the research workflow path.
 - [x] Parts requests route through the research workflow with a `parts_search` tool for Porsche 911 and BMW 2002 part-number, fitment, stock, price, and symptom-driven parts research.
-- [ ] Add Browser Run-backed research tests for prompts with supplied URLs and prompts without URLs.
+- [x] Add Browser Run-backed research tests for prompts with supplied URLs and prompts without URLs.
 - [ ] Live-test parts-search answers against Pelican Parts, FCP Euro, RockAuto, BluntTech, Pelican forums, BMW2002FAQ, and RealOEM pages.
 
 ## Dashboard And Auth
@@ -76,9 +76,9 @@ This file tracks what is still incomplete or risky in the current Charles app. K
 - [x] Settings lists bundled skills.
 - [x] Passkey support was removed; login is magic-link only.
 - [ ] Live-test magic-link sign-in in a real browser.
-- [ ] Replace dashboard summaries with richer Flue run/session metadata if available from generated Flue stores.
+- [x] Replace dashboard summaries with richer Flue run/session metadata from Flue admin run APIs.
 - [ ] Show separate recent grocery, research, and parts-search histories when workflow metadata is sufficient.
-- [ ] Add integration tests for Better Auth Durable Object adapter: magic-link token create/consume, session create/read/delete, and allowlist enforcement.
+- [x] Add integration tests for Better Auth Durable Object adapter: magic-link token create/consume, session create/read/delete, and allowlist enforcement.
 
 ## Operations And Docs
 

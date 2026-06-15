@@ -14,6 +14,66 @@ type SchedulerState = {
   groceryReminderScheduleId?: string;
 };
 
+type SchedulerSql = {
+  exec<T = unknown>(query: string, ...bindings: unknown[]): Iterable<T>;
+};
+
+export type SchedulerSchedule = { id: string; callback?: string; type?: string };
+
+export function buildScheduleState(state: SchedulerState, schedules: SchedulerSchedule[]) {
+  return {
+    groceryReminderScheduleId: state.groceryReminderScheduleId,
+    scheduleCount: schedules.length,
+    schedules: schedules.map((schedule) => ({
+      id: schedule.id,
+      callback: schedule.callback,
+      type: schedule.type,
+    })),
+    healthy: Boolean(
+      state.groceryReminderScheduleId &&
+      schedules.some((schedule) => schedule.id === state.groceryReminderScheduleId),
+    ),
+  };
+}
+
+export function ensureSchedulerTables(sql: SchedulerSql) {
+  sql.exec(`
+    CREATE TABLE IF NOT EXISTS scheduler_idempotency (
+      key TEXT PRIMARY KEY,
+      created_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS grocery_reminders (
+      local_date TEXT PRIMARY KEY,
+      sent_at TEXT NOT NULL,
+      recipients_json TEXT NOT NULL,
+      summary_json TEXT NOT NULL
+    );
+  `);
+}
+
+export function claimSchedulerIdempotency(
+  sql: SchedulerSql,
+  key: string,
+  claimedAt: string,
+): boolean {
+  sql.exec(
+    'INSERT OR IGNORE INTO scheduler_idempotency (key, created_at) VALUES (?, ?)',
+    key,
+    claimedAt,
+  );
+  const rows = [
+    ...sql.exec<{ created_at?: string }>(
+      'SELECT key, created_at FROM scheduler_idempotency WHERE key = ?',
+      key,
+    ),
+  ];
+  return rows[0]?.created_at === claimedAt;
+}
+
+export function releaseSchedulerIdempotency(sql: SchedulerSql, key: string) {
+  sql.exec('DELETE FROM scheduler_idempotency WHERE key = ?', key);
+}
+
 export default createAgent(() => ({
   model: false,
   instructions: 'Own background schedules for Charles.',
@@ -49,34 +109,22 @@ export const cloudflare = extend({
 
       async getScheduleState() {
         const schedules = await this.getSchedules();
-        return {
-          groceryReminderScheduleId: this.state.groceryReminderScheduleId,
-          scheduleCount: schedules.length,
-          schedules: schedules.map(
-            (schedule: { id: string; callback?: string; type?: string }) => ({
-              id: schedule.id,
-              callback: schedule.callback,
-              type: schedule.type,
-            }),
-          ),
-          healthy: Boolean(
-            this.state.groceryReminderScheduleId &&
-            schedules.some(
-              (schedule: { id: string }) => schedule.id === this.state.groceryReminderScheduleId,
-            ),
-          ),
-        };
+        return buildScheduleState(this.state, schedules);
       }
 
       async repairSchedules() {
         await this.onStart();
         const state = await this.getScheduleState();
-        logEvent('info', 'scheduler.schedule_repaired', state);
+        logEvent('info', 'scheduler.schedule_repaired', {
+          groceryReminderScheduleId: state.groceryReminderScheduleId,
+          scheduleCount: state.scheduleCount,
+          healthy: state.healthy,
+        });
         return state;
       }
 
       async sendFridayGroceryReminderIfDue() {
-        this.ensureSchedulerTables();
+        ensureSchedulerTables(this.ctx.storage.sql);
 
         const due = shouldSendFridayGroceryReminder(new Date(), { timezone: DEFAULT_TIMEZONE });
         if (!due.due) {
@@ -91,25 +139,14 @@ export const cloudflare = extend({
       }
 
       async sendTestGroceryReminder(localDate = new Date().toISOString().slice(0, 10)) {
-        this.ensureSchedulerTables();
+        ensureSchedulerTables(this.ctx.storage.sql);
         return this.sendGroceryReminderForLocalDate(`test-${localDate}`);
       }
 
       private async sendGroceryReminderForLocalDate(localDate: string) {
         const key = `grocery-reminder:${localDate}`;
         const claimedAt = new Date().toISOString();
-        this.ctx.storage.sql.exec(
-          'INSERT OR IGNORE INTO scheduler_idempotency (key, created_at) VALUES (?, ?)',
-          key,
-          claimedAt,
-        );
-        const rows = [
-          ...this.ctx.storage.sql.exec(
-            'SELECT key, created_at FROM scheduler_idempotency WHERE key = ?',
-            key,
-          ),
-        ];
-        if ((rows[0] as { created_at?: string } | undefined)?.created_at !== claimedAt) {
+        if (!claimSchedulerIdempotency(this.ctx.storage.sql, key, claimedAt)) {
           logEvent('info', 'scheduler.grocery_reminder_skipped', {
             reason: 'already-sent',
             localDate,
@@ -123,7 +160,7 @@ export const cloudflare = extend({
           env,
         );
         if ('error' in grocery) {
-          this.ctx.storage.sql.exec('DELETE FROM scheduler_idempotency WHERE key = ?', key);
+          releaseSchedulerIdempotency(this.ctx.storage.sql, key);
           logEvent('error', 'scheduler.grocery_reminder_failed', {
             localDate,
             reason: grocery.error.message,
@@ -163,7 +200,7 @@ export const cloudflare = extend({
       }
 
       getRecentGroceryReminders(limit = 10): GroceryReminderSummary[] {
-        this.ensureSchedulerTables();
+        ensureSchedulerTables(this.ctx.storage.sql);
 
         return [
           ...this.ctx.storage.sql.exec(
@@ -173,21 +210,6 @@ export const cloudflare = extend({
         ].map(
           (row: { summary_json: string }) => JSON.parse(row.summary_json) as GroceryReminderSummary,
         );
-      }
-
-      private ensureSchedulerTables() {
-        this.ctx.storage.sql.exec(`
-          CREATE TABLE IF NOT EXISTS scheduler_idempotency (
-            key TEXT PRIMARY KEY,
-            created_at TEXT NOT NULL
-          );
-          CREATE TABLE IF NOT EXISTS grocery_reminders (
-            local_date TEXT PRIMARY KEY,
-            sent_at TEXT NOT NULL,
-            recipients_json TEXT NOT NULL,
-            summary_json TEXT NOT NULL
-          );
-        `);
       }
 
       private async dispatchReminderSummary(summary: GroceryReminderSummary) {

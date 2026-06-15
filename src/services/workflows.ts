@@ -1,5 +1,3 @@
-import type { WorkflowHistorySummary } from '../workflow-store.ts';
-
 type WorkflowName = 'grocery-cart' | 'research';
 
 export type InternalWorkflowResult = {
@@ -7,6 +5,7 @@ export type InternalWorkflowResult = {
   ok: boolean;
   status: number;
   data: unknown;
+  runId?: string;
 };
 
 type InvokeInternalWorkflowOptions = {
@@ -16,6 +15,20 @@ type InvokeInternalWorkflowOptions = {
 
 function appOrigin(env: Env) {
   return env.PUBLIC_ORIGIN || env.BETTER_AUTH_URL || 'https://charles.silverlock.workers.dev';
+}
+
+function flueRunId(data: unknown): string | undefined {
+  if (!data || typeof data !== 'object' || !('_meta' in data)) {
+    return undefined;
+  }
+
+  const meta = (data as { _meta?: unknown })._meta;
+  if (!meta || typeof meta !== 'object' || !('runId' in meta)) {
+    return undefined;
+  }
+
+  const runId = (meta as { runId?: unknown }).runId;
+  return typeof runId === 'string' ? runId : undefined;
 }
 
 export async function invokeInternalWorkflow(
@@ -44,12 +57,7 @@ export async function invokeInternalWorkflow(
   const response = await (options.fetchWorkflow ?? fetch)(request);
 
   const data = await response.json().catch(() => ({}));
-  return { workflow, ok: response.ok, status: response.status, data };
-}
-
-export async function recordWorkflowHistory(env: Env, summary: Omit<WorkflowHistorySummary, 'id'>) {
-  const id = `${summary.createdAt}:${summary.workflow}:${summary.subject ?? ''}:${summary.requestedBy ?? ''}`;
-  await env.WORKFLOW_STORE.getByName('default').recordWorkflowHistory({ id, ...summary });
+  return { workflow, ok: response.ok, status: response.status, data, runId: flueRunId(data) };
 }
 
 export function summarizeWorkflowResult(result: InternalWorkflowResult): string {

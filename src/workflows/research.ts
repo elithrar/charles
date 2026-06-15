@@ -17,11 +17,60 @@ type ResearchPayload = {
   mode?: 'general' | 'parts-search';
 };
 
+type ResearchContextItem = NonNullable<ResearchPayload['context']>[number];
+
 export const route: WorkflowRouteHandler = async (_c, next) => next();
 
+function extractHttpUrls(text: string): string[] {
+  const urls = [...text.matchAll(/https?:\/\/[^\s)\]"'<]+/g)].map((match) =>
+    match[0].replace(/[:,.]+$/, ''),
+  );
+  return [...new Set(urls)];
+}
+
 function extractCitationUrls(text: string): Array<{ url: string; summary: string }> {
-  const urls = [...text.matchAll(/https?:\/\/[^\s)\],.]+/g)].map((match) => match[0]);
+  const urls = extractHttpUrls(text);
   return [...new Set(urls)].map((url) => ({ url, summary: 'Referenced in research answer.' }));
+}
+
+async function browserRunMarkdown(env: Env, url: string): Promise<string> {
+  if (!env.BROWSER?.quickAction) {
+    return 'Browser Run binding is unavailable.';
+  }
+
+  try {
+    const result = await env.BROWSER.quickAction('markdown', { url });
+    if (typeof result === 'string') {
+      return result;
+    }
+
+    if (result instanceof Response) {
+      return await result.text();
+    }
+
+    if (typeof result.markdown === 'string') {
+      return result.markdown;
+    }
+
+    return JSON.stringify(result);
+  } catch (error) {
+    return `Browser Run failed: ${String(error)}`;
+  }
+}
+
+async function promptUrlContext(prompt: string, env: Env): Promise<ResearchContextItem[]> {
+  const urls = extractHttpUrls(prompt).slice(0, 3);
+  if (!urls.length) {
+    return [];
+  }
+
+  return Promise.all(
+    urls.map(async (url) => ({
+      title: url,
+      url,
+      text: (await browserRunMarkdown(env, url)).slice(0, 12_000),
+    })),
+  );
 }
 
 const GITHUB_MCP_AGENT_INSTRUCTIONS = `
@@ -160,10 +209,15 @@ export async function run({ id, init, payload, env }: FlueContext<ResearchPayloa
       tools: [...(github?.tools ?? []), ...(exa?.tools ?? []), ...(resy?.tools ?? [])],
     });
     const session = await harness.session(`research-${id}`);
-    const context =
-      payload.context
-        ?.map((item) => `- ${item.title ?? item.url}: ${item.url}\n${item.text}`)
-        .join('\n\n') ?? 'No browser context supplied yet.';
+    const browserContext = [
+      ...(payload.context ?? []),
+      ...(await promptUrlContext(payload.prompt, env)),
+    ];
+    const context = browserContext.length
+      ? browserContext
+          .map((item) => `- ${item.title ?? item.url}: ${item.url}\n${item.text}`)
+          .join('\n\n')
+      : 'No browser context supplied yet. Use Browser Run if current rendered page evidence is needed.';
     const response = await session.skill('research', {
       args: {
         prompt:

@@ -16,12 +16,8 @@ import {
   sendCharlesEmail,
   type InboundEmailPayload,
 } from './email.ts';
+import { renderMarkdownEmail } from './email-renderer.tsx';
 import { logEvent } from './logging.ts';
-import {
-  recordWorkflowHistory,
-  summarizeWorkflowResult,
-  type InternalWorkflowResult,
-} from './services/workflows.ts';
 
 export { CharlesAuthStore, CharlesWorkflowStore };
 
@@ -57,6 +53,7 @@ async function replyToEmail(
   const fromIdentity = defaultFromIdentity(env);
   const formattedFrom = formatEmailAddress(fromIdentity);
   const subject = buildReplySubject(payload.subject);
+  const rendered = await renderMarkdownEmail(text);
   const mime = createMimeMessage();
   mime.setSender(formattedFrom);
   mime.setRecipient(payload.from);
@@ -70,7 +67,8 @@ async function replyToEmail(
     mime.setHeader('references', payload.references);
   }
 
-  mime.addMessage({ contentType: 'text/plain', data: text });
+  mime.addMessage({ contentType: 'text/plain', data: rendered.text });
+  mime.addMessage({ contentType: 'text/html', data: rendered.html });
 
   try {
     await message.reply(new EmailMessage(from, payload.from, mime.asRaw()));
@@ -138,16 +136,14 @@ async function buildWorkflowReply(
     }
 
     const result = (await response.json()) as {
-      result?: { replyText?: string; childWorkflow?: InternalWorkflowResult };
+      result?: { replyText?: string };
       replyText?: string;
-      childWorkflow?: InternalWorkflowResult;
     };
     return {
       replyText:
         result.result?.replyText ||
         result.replyText ||
         'Charles received your message, but did not produce a reply.',
-      childWorkflow: result.result?.childWorkflow || result.childWorkflow,
     };
   } catch (error) {
     logEvent('error', 'email.workflow_execution_failed', { error: String(error) });
@@ -179,45 +175,14 @@ async function deliverWorkflowReply(
   }
 }
 
-async function recordDeliveredArtifacts(
-  env: Env,
-  payload: InboundEmailPayload,
-  replyText: string,
-  requestedBy: string,
-  childWorkflow?: InternalWorkflowResult,
-) {
-  const tasks: Promise<unknown>[] = [
-    recordEmailThread(env, payload, replyText).catch((error) =>
-      logEvent('error', 'email.thread_record_failed', {
-        from: payload.from,
-        subject: payload.subject,
-        error: String(error),
-      }),
-    ),
-  ];
-
-  if (childWorkflow) {
-    const summary = summarizeWorkflowResult(childWorkflow);
-    tasks.push(
-      recordWorkflowHistory(env, {
-        workflow: childWorkflow.workflow,
-        status: childWorkflow.ok ? 'ok' : 'error',
-        subject: payload.subject,
-        requestedBy,
-        summary,
-        createdAt: new Date().toISOString(),
-      }).catch((error) =>
-        logEvent('error', 'email.workflow_history_record_failed', {
-          requestedBy,
-          subject: payload.subject,
-          workflow: childWorkflow.workflow,
-          error: String(error),
-        }),
-      ),
-    );
-  }
-
-  await Promise.all(tasks);
+async function recordDeliveredArtifacts(env: Env, payload: InboundEmailPayload, replyText: string) {
+  await recordEmailThread(env, payload, replyText).catch((error) =>
+    logEvent('error', 'email.thread_record_failed', {
+      from: payload.from,
+      subject: payload.subject,
+      error: String(error),
+    }),
+  );
 }
 
 export default {
@@ -254,7 +219,6 @@ export default {
             env,
             payload,
             'Charles is missing internal workflow authentication configuration.',
-            sender.value,
           ),
         );
       }
@@ -266,15 +230,7 @@ export default {
 
     const delivered = await deliverWorkflowReply(message, env, payload, workflowReply.replyText);
     if (delivered) {
-      ctx.waitUntil(
-        recordDeliveredArtifacts(
-          env,
-          payload,
-          workflowReply.replyText,
-          sender.value,
-          workflowReply.childWorkflow,
-        ),
-      );
+      ctx.waitUntil(recordDeliveredArtifacts(env, payload, workflowReply.replyText));
     }
   },
 } satisfies ExportedHandler<Env>;

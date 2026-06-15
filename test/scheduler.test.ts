@@ -1,8 +1,56 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+
+vi.mock('@flue/runtime', () => ({
+  createAgent: vi.fn(() => ({})),
+  dispatch: vi.fn(),
+}));
+
+vi.mock('@flue/runtime/cloudflare', () => ({
+  extend: vi.fn((config) => config),
+  getCloudflareContext: vi.fn(() => ({ env: {} })),
+}));
+
+import {
+  buildScheduleState,
+  claimSchedulerIdempotency,
+  releaseSchedulerIdempotency,
+} from '../src/agents/scheduler.ts';
 import {
   buildGroceryReminderSummary,
   shouldSendFridayGroceryReminder,
 } from '../src/services/scheduler.ts';
+
+class MemorySchedulerSql {
+  private readonly idempotency = new Map<string, string>();
+
+  exec<T = unknown>(query: string, ...bindings: unknown[]): T[] {
+    if (query.includes('CREATE TABLE')) {
+      return [];
+    }
+
+    if (query.startsWith('INSERT OR IGNORE INTO scheduler_idempotency')) {
+      const [key, createdAt] = bindings as [string, string];
+      if (!this.idempotency.has(key)) {
+        this.idempotency.set(key, createdAt);
+      }
+      return [];
+    }
+
+    if (query.startsWith('SELECT key, created_at FROM scheduler_idempotency')) {
+      const [key] = bindings as [string];
+      const createdAt = this.idempotency.get(key);
+      return createdAt ? ([{ key, created_at: createdAt }] as T[]) : [];
+    }
+
+    if (query.startsWith('DELETE FROM scheduler_idempotency')) {
+      const [key] = bindings as [string];
+      this.idempotency.delete(key);
+      return [];
+    }
+
+    throw new Error(`Unexpected SQL: ${query}`);
+  }
+}
 
 describe('scheduler service', () => {
   it('is due during Friday morning New York time', () => {
@@ -33,5 +81,33 @@ describe('scheduler service', () => {
     expect(summary.subject).toBe('Charles grocery reminder for 2026-06-19');
     expect(summary.text).toContain('Charles will never check out');
     expect(summary.recipients).toEqual(['matt@eatsleeprepeat.net']);
+  });
+
+  it('claims grocery reminder idempotency before side effects', () => {
+    const sql = new MemorySchedulerSql();
+    const key = 'grocery-reminder:2026-06-19';
+
+    expect(claimSchedulerIdempotency(sql, key, 'first-claim')).toBe(true);
+    expect(claimSchedulerIdempotency(sql, key, 'overlapping-claim')).toBe(false);
+
+    releaseSchedulerIdempotency(sql, key);
+    expect(claimSchedulerIdempotency(sql, key, 'retry-after-failure')).toBe(true);
+  });
+
+  it('marks stored scheduler state unhealthy when the schedule is missing', () => {
+    expect(buildScheduleState({ groceryReminderScheduleId: 'stored-id' }, [])).toMatchObject({
+      groceryReminderScheduleId: 'stored-id',
+      scheduleCount: 0,
+      healthy: false,
+    });
+
+    expect(
+      buildScheduleState({ groceryReminderScheduleId: 'stored-id' }, [
+        { id: 'stored-id', callback: 'sendFridayGroceryReminderIfDue', type: 'every' },
+      ]),
+    ).toMatchObject({
+      scheduleCount: 1,
+      healthy: true,
+    });
   });
 });

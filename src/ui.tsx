@@ -10,8 +10,8 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import type { ReactNode } from 'react';
 import type { EmailThreadMessage, EmailThreadPage, UserLoginSummary } from './auth-store.ts';
 import type { ConfiguredMcpServer } from './capabilities.ts';
+import type { DashboardWorkflowRun } from './services/flue-runs.ts';
 import type { GroceryReminderSummary } from './services/scheduler.ts';
-import type { WorkflowHistorySummary } from './workflow-store.ts';
 
 type DashboardMcpServer = ConfiguredMcpServer & { configured: boolean };
 
@@ -554,7 +554,7 @@ export function dashboardHtml(
   userEmail: string | undefined,
   reminders: GroceryReminderSummary[],
   emailThreads: EmailThreadPage,
-  workflows: WorkflowHistorySummary[],
+  workflows: DashboardWorkflowRun[],
   recentLogins: UserLoginSummary[],
   mcpServers: DashboardMcpServer[],
   bundledSkills: string[],
@@ -660,6 +660,9 @@ export function dashboardHtml(
                 {workflow.status} / {new Date(workflow.createdAt).toLocaleString()}
               </Text>
               <Text DANGEROUS_className="charles-dashboard-copy">{workflow.summary}</Text>
+              <Text variant="secondary" size="sm">
+                <a href={workflow.detailUrl}>Run</a> / <a href={workflow.eventsUrl}>Events</a>
+              </Text>
             </li>
           ))}
         </ul>

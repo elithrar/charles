@@ -3,7 +3,7 @@ import { APIError } from 'better-auth/api';
 import { magicLink } from 'better-auth/plugins';
 import { isAllowlistedEmail } from './config.ts';
 import { charlesAuthAdapter } from './auth-adapter.ts';
-import { defaultFromIdentity } from './email.ts';
+import { sendCharlesEmail } from './email.ts';
 import type { CharlesEnv } from './types.ts';
 
 function authOrigin(env: CharlesEnv, requestUrl: string): string {
@@ -18,6 +18,14 @@ function requireAuthSecret(env: CharlesEnv): string {
   return env.BETTER_AUTH_SECRET;
 }
 
+function emailFromVerificationIdentifier(identifier: unknown): string | null {
+  if (typeof identifier !== 'string') {
+    return null;
+  }
+
+  return identifier.match(/[^\s:<>]+@[^\s:<>]+\.[^\s:<>]+/)?.[0] ?? null;
+}
+
 export function createCharlesAuth(env: CharlesEnv, requestUrl: string) {
   const baseURL = authOrigin(env, requestUrl);
   const authStore = env.AUTH_STORE.getByName('default');
@@ -27,6 +35,19 @@ export function createCharlesAuth(env: CharlesEnv, requestUrl: string) {
     secret: requireAuthSecret(env),
     database: charlesAuthAdapter({ store: authStore }),
     trustedOrigins: [baseURL],
+    hooks: {
+      before: async (ctx) => {
+        const request = ctx as { path?: string; body?: { email?: unknown } };
+        if (request.path !== '/sign-in/magic-link') {
+          return;
+        }
+
+        const email = request.body?.email;
+        if (typeof email === 'string' && !isAllowlistedEmail(email)) {
+          throw new APIError('FORBIDDEN', { message: 'Email is not allowlisted' });
+        }
+      },
+    },
     user: {
       deleteUser: {
         enabled: false,
@@ -51,6 +72,16 @@ export function createCharlesAuth(env: CharlesEnv, requestUrl: string) {
           },
         },
       },
+      verification: {
+        create: {
+          before: async (verification) => {
+            const email = emailFromVerificationIdentifier(verification.identifier);
+            if (email && !isAllowlistedEmail(email)) {
+              throw new APIError('FORBIDDEN', { message: 'Email is not allowlisted' });
+            }
+          },
+        },
+      },
     },
     plugins: [
       magicLink({
@@ -61,11 +92,10 @@ export function createCharlesAuth(env: CharlesEnv, requestUrl: string) {
             throw new APIError('FORBIDDEN', { message: 'Email is not allowlisted' });
           }
 
-          await env.EMAIL.send({
-            from: defaultFromIdentity(env),
+          await sendCharlesEmail(env, {
             to: email.toLowerCase(),
             subject: 'Sign in to Charles',
-            text: `Open this link to sign in to Charles.\n\n${url}`,
+            text: `Open this link to sign in to Charles.\n\n[Sign in to Charles](${url})`,
           });
         },
       }),
