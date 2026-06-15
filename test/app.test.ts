@@ -4,6 +4,49 @@ vi.mock('cloudflare:workers', () => ({
   env: {},
 }));
 
+vi.mock('@flue/runtime/routing', async () => {
+  const { Hono } = await import('hono');
+
+  return {
+    flue: () => new Hono(),
+    admin: () => {
+      const app = new Hono();
+      app.get('/runs', (c) =>
+        c.json({
+          items: [
+            {
+              runId: 'research-run-1',
+              owner: {
+                kind: 'workflow',
+                workflowName: 'research',
+                instanceId: 'research-run-1',
+              },
+              status: 'completed',
+              startedAt: '2026-06-19T14:02:00.000Z',
+              endedAt: '2026-06-19T14:02:05.000Z',
+              durationMs: 5000,
+              isError: false,
+            },
+          ],
+        }),
+      );
+      app.get('/runs/:runId', (c) =>
+        c.json({
+          runId: c.req.param('runId'),
+          owner: {
+            kind: 'workflow',
+            workflowName: 'research',
+            instanceId: c.req.param('runId'),
+          },
+          status: 'completed',
+          startedAt: '2026-06-19T14:02:00.000Z',
+        }),
+      );
+      return app;
+    },
+  };
+});
+
 const env = {
   BETTER_AUTH_SECRET: 'test-secret-that-is-long-enough-for-local-tests',
   INTERNAL_AUTH_SECRET: 'test-internal-secret',
@@ -58,21 +101,7 @@ const env = {
       ]),
     }),
   },
-  WORKFLOW_STORE: {
-    getByName: () => ({
-      getRecentWorkflowHistory: vi.fn(async () => [
-        {
-          id: 'workflow-1',
-          workflow: 'research',
-          status: 'ok',
-          subject: 'Research request',
-          requestedBy: 'matt@eatsleeprepeat.net',
-          summary: 'Found sources.',
-          createdAt: '2026-06-19T14:02:00.000Z',
-        },
-      ]),
-    }),
-  },
+  WORKFLOW_STORE: { getByName: () => ({}) },
   FLUE_SCHEDULER_AGENT: {
     idFromName: () => ({}),
     get: () => ({
@@ -236,6 +265,8 @@ describe('app routes', () => {
     expect(html).toContain('/dashboard?tab=workflows');
     expect(html).toContain('/dashboard?tab=settings');
     expect(html).toContain('At a glance');
+    expect(html).toContain('research / completed');
+    expect(html).toContain('/runs/research-run-1');
     expect(html).not.toContain('Recent email threads');
   });
 

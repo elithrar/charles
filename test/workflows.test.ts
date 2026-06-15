@@ -4,7 +4,7 @@ import { invokeInternalWorkflow } from '../src/services/workflows.ts';
 describe('workflow services', () => {
   it('can invoke mounted workflow routes without public self-fetch', async () => {
     const fetchWorkflow = vi.fn(async (_request: Request) =>
-      Response.json({ result: { answer: 'ok' } }),
+      Response.json({ result: { answer: 'ok' }, _meta: { runId: 'research-run-1' } }),
     );
 
     const result = await invokeInternalWorkflow(
@@ -25,7 +25,8 @@ describe('workflow services', () => {
       workflow: 'research',
       ok: true,
       status: 200,
-      data: { result: { answer: 'ok' } },
+      data: { result: { answer: 'ok' }, _meta: { runId: 'research-run-1' } },
+      runId: 'research-run-1',
     });
   });
 });

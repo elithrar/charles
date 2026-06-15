@@ -98,7 +98,6 @@ describe('Cloudflare email handler', () => {
     const { default: handler } = await import('../src/cloudflare.ts');
     const send = vi.fn(async () => ({ messageId: 'fallback-id' }));
     const recordEmailThread = vi.fn(async () => undefined);
-    const recordWorkflowHistory = vi.fn(async () => undefined);
     const message = emailMessage({
       reply: vi.fn(async () => Promise.reject(new Error('reply failed'))),
     });
@@ -124,7 +123,6 @@ describe('Cloudflare email handler', () => {
         INTERNAL_AUTH_SECRET: 'internal-secret',
         EMAIL: { send },
         AUTH_STORE: { getByName: () => ({ recordEmailThread }) },
-        WORKFLOW_STORE: { getByName: () => ({ recordWorkflowHistory }) },
       } as unknown as Env,
       ctx,
     );
@@ -134,6 +132,7 @@ describe('Cloudflare email handler', () => {
       expect.objectContaining({
         from: { email: 'charles@questionable.services', name: 'Charles, your Agent' },
         to: 'matt@eatsleeprepeat.net',
+        html: expect.stringContaining('<strong'),
         headers: {
           'In-Reply-To': '<message-1@example.com>',
           References: '<parent@example.com>',
@@ -147,19 +146,11 @@ describe('Cloudflare email handler', () => {
         replyText: 'Reply **body**',
       }),
     );
-    expect(recordWorkflowHistory).toHaveBeenCalledWith(
-      expect.objectContaining({
-        workflow: 'research',
-        status: 'ok',
-        requestedBy: 'matt@eatsleeprepeat.net',
-      }),
-    );
   });
 
   it('records the reply only after successful direct delivery', async () => {
     const { default: handler } = await import('../src/cloudflare.ts');
     const recordEmailThread = vi.fn(async () => undefined);
-    const recordWorkflowHistory = vi.fn(async () => undefined);
     const message = emailMessage();
     const { ctx, pending } = executionContext();
 
@@ -183,7 +174,6 @@ describe('Cloudflare email handler', () => {
         INTERNAL_AUTH_SECRET: 'internal-secret',
         EMAIL: { send: vi.fn(async () => ({ messageId: 'unused' })) },
         AUTH_STORE: { getByName: () => ({ recordEmailThread }) },
-        WORKFLOW_STORE: { getByName: () => ({ recordWorkflowHistory }) },
       } as unknown as Env,
       ctx,
     );
@@ -202,11 +192,9 @@ describe('Cloudflare email handler', () => {
       text: expect.stringContaining('Hello Charles'),
     });
     expect(message.reply).toHaveBeenCalledTimes(1);
+    expect(message.reply.mock.calls[0]?.[0].raw).toContain('text/html');
     expect(recordEmailThread).toHaveBeenCalledWith(
       expect.objectContaining({ replyText: 'Delivered reply' }),
-    );
-    expect(recordWorkflowHistory).toHaveBeenCalledWith(
-      expect.objectContaining({ workflow: 'research', status: 'ok' }),
     );
   });
 
@@ -239,7 +227,6 @@ describe('Cloudflare email handler', () => {
     const { default: handler } = await import('../src/cloudflare.ts');
     const send = vi.fn(async () => Promise.reject(new Error('send failed')));
     const recordEmailThread = vi.fn(async () => undefined);
-    const recordWorkflowHistory = vi.fn(async () => undefined);
     const message = emailMessage({
       reply: vi.fn(async () => Promise.reject(new Error('reply failed'))),
     });
@@ -265,7 +252,6 @@ describe('Cloudflare email handler', () => {
         INTERNAL_AUTH_SECRET: 'internal-secret',
         EMAIL: { send },
         AUTH_STORE: { getByName: () => ({ recordEmailThread }) },
-        WORKFLOW_STORE: { getByName: () => ({ recordWorkflowHistory }) },
       } as unknown as Env,
       ctx,
     );
@@ -275,7 +261,6 @@ describe('Cloudflare email handler', () => {
     expect(message.reply).toHaveBeenCalledTimes(1);
     expect(send).toHaveBeenCalledTimes(1);
     expect(recordEmailThread).not.toHaveBeenCalled();
-    expect(recordWorkflowHistory).not.toHaveBeenCalled();
   });
 
   it('rejects non-allowlisted senders without workflow admission', async () => {

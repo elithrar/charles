@@ -1,5 +1,6 @@
 import { Result, type Err, type Ok } from 'better-result';
 import { AGENT_EMAIL, isAllowlistedEmail } from './config.ts';
+import { renderMarkdownEmail } from './email-renderer.tsx';
 import { invalidInput, unauthorized, type AppError } from './errors.ts';
 
 export type InboundEmailPayload = {
@@ -117,14 +118,20 @@ export async function sendCharlesEmail(
     to: string | string[];
     subject: string;
     text: string;
+    html?: string;
     headers?: Record<string, string>;
   },
 ) {
+  const rendered = message.html
+    ? { html: message.html, text: message.text }
+    : await renderMarkdownEmail(message.text);
+
   return env.EMAIL.send({
     from: defaultFromIdentity(env),
     to: message.to,
     subject: message.subject,
-    text: message.text,
+    text: rendered.text,
+    html: rendered.html,
     headers: message.headers,
   });
 }

@@ -4,9 +4,10 @@ import {
   defaultFromIdentity,
   formatEmailAddress,
   normalizeEmailAddress,
-  requireAllowlistedSender,
   sendCharlesEmail,
+  requireAllowlistedSender,
 } from '../src/email.ts';
+import { renderMarkdownEmail } from '../src/email-renderer.tsx';
 
 function unwrap<T>(result: { value?: T; error?: unknown }) {
   if ('error' in result) {
@@ -94,7 +95,27 @@ describe('email helpers', () => {
         to: 'matt@eatsleeprepeat.net',
         subject: 'Hello',
         text: 'Body',
+        html: expect.stringContaining('<p'),
       }),
     );
+  });
+
+  it('renders Markdown email HTML while keeping a plain-text fallback', async () => {
+    const rendered = await renderMarkdownEmail(
+      [
+        'Hello **Matt**.',
+        '',
+        '- Check [Cloudflare](https://cloudflare.com/).',
+        '- See this image:',
+        '',
+        '![Cart](https://example.com/cart.png)',
+      ].join('\n'),
+    );
+
+    expect(rendered.text).toContain('Hello **Matt**.');
+    expect(rendered.html).toContain('<strong');
+    expect(rendered.html).toContain('href="https://cloudflare.com/"');
+    expect(rendered.html).toContain('<ul');
+    expect(rendered.html).toContain('src="https://example.com/cart.png"');
   });
 });
