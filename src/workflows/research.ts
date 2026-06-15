@@ -153,13 +153,13 @@ async function connectResearchMcpTools(env: Env, mode: ResearchPayload['mode']) 
   return { github, exa, resy };
 }
 
-export async function run({ init, payload, env }: FlueContext<ResearchPayload, Env>) {
+export async function run({ id, init, payload, env }: FlueContext<ResearchPayload, Env>) {
   const { github, exa, resy } = await connectResearchMcpTools(env, payload.mode);
   try {
     const harness = await init(researcher, {
       tools: [...(github?.tools ?? []), ...(exa?.tools ?? []), ...(resy?.tools ?? [])],
     });
-    const session = await harness.session('research');
+    const session = await harness.session(`research-${id}`);
     const context =
       payload.context
         ?.map((item) => `- ${item.title ?? item.url}: ${item.url}\n${item.text}`)

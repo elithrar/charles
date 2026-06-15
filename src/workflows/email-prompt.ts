@@ -9,7 +9,6 @@ import {
 import { logEvent } from '../logging.ts';
 import {
   invokeInternalWorkflow,
-  recordWorkflowHistory,
   summarizeWorkflowResult,
   type InternalWorkflowResult,
 } from '../services/workflows.ts';
@@ -41,7 +40,11 @@ ${BROWSER_RUN_AGENT_INSTRUCTIONS}`,
 }));
 
 const GENERAL_REPLY_UNAVAILABLE =
-  'Charles received your message, but the AI reply service is unavailable right now. Please try again later.';
+  "Charles received your message, but I'm having a few, well... problems.";
+
+function emailSessionName(runId: string) {
+  return `email-${runId}`;
+}
 
 function unavailableReply(intent: EmailIntent) {
   if (intent === 'grocery') {
@@ -90,30 +93,12 @@ async function routeToChildWorkflow(
       return app.fetch(request, env);
     },
   });
-  const summary = summarizeWorkflowResult(result);
   if (!result.ok) {
     logEvent('warn', 'email_prompt.child_workflow_failed', {
       intent,
       workflow,
       status: result.status,
       requestedBy: userEmail,
-    });
-  }
-  try {
-    await recordWorkflowHistory(env, {
-      workflow,
-      status: result.ok ? 'ok' : 'error',
-      subject: payload.subject,
-      requestedBy: userEmail,
-      summary,
-      createdAt: new Date().toISOString(),
-    });
-  } catch (error) {
-    logEvent('error', 'email_prompt.history_record_failed', {
-      intent,
-      workflow,
-      requestedBy: userEmail,
-      error: String(error),
     });
   }
 
@@ -124,7 +109,7 @@ async function routeToChildWorkflow(
   };
 }
 
-export async function run({ init, payload, env }: FlueContext<InboundEmailPayload, Env>) {
+export async function run({ id, init, payload, env }: FlueContext<InboundEmailPayload, Env>) {
   const intent = classifyEmailIntent(payload.subject, payload.text);
 
   try {
@@ -146,7 +131,7 @@ export async function run({ init, payload, env }: FlueContext<InboundEmailPayloa
     }
 
     const harness = await init(responder);
-    const session = await harness.session('email');
+    const session = await harness.session(emailSessionName(id));
     const response = await session.prompt(
       `Subject: ${payload.subject}\n\nMessage:\n${payload.text}\n\nClassified intent: ${intent}. Reply by email.`,
     );

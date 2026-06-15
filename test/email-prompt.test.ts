@@ -2,7 +2,6 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const workflowMocks = vi.hoisted(() => ({
   invokeInternalWorkflow: vi.fn(),
-  recordWorkflowHistory: vi.fn(async () => undefined),
   summarizeWorkflowResult: vi.fn(() => 'workflow summary'),
 }));
 
@@ -21,7 +20,6 @@ function inboundPayload(subject: string, text: string) {
 describe('email-prompt workflow routing', () => {
   beforeEach(() => {
     workflowMocks.invokeInternalWorkflow.mockReset();
-    workflowMocks.recordWorkflowHistory.mockClear();
     workflowMocks.summarizeWorkflowResult.mockClear();
     workflowMocks.invokeInternalWorkflow.mockImplementation(async (_env, workflow) => ({
       workflow,
@@ -75,26 +73,24 @@ describe('email-prompt workflow routing', () => {
         childPayload,
         expect.objectContaining({ origin: 'https://charles.internal' }),
       );
-      expect(workflowMocks.recordWorkflowHistory).toHaveBeenCalledWith(
-        expect.objectContaining({ INTERNAL_AUTH_SECRET: 'internal-secret' }),
-        expect.objectContaining({ workflow, status: 'ok', requestedBy: 'matt@eatsleeprepeat.net' }),
-      );
       expect(result).toMatchObject({ childWorkflow: { workflow, ok: true } });
       expect(result.replyText).toBe(replyText);
     },
   );
 
   it('returns a friendly fallback when the general reply agent fails', async () => {
+    const session = vi.fn(async () => ({
+      prompt: vi.fn(async () => {
+        throw new Error('provider unavailable');
+      }),
+    }));
     const init = vi.fn(async () => ({
-      session: vi.fn(async () => ({
-        prompt: vi.fn(async () => {
-          throw new Error('provider unavailable');
-        }),
-      })),
+      session,
     }));
     const { run } = await import('../src/workflows/email-prompt.ts');
 
     const result = await run({
+      id: 'run-123',
       init,
       payload: inboundPayload('Hello', 'Can you help me think through this?'),
       env: { INTERNAL_AUTH_SECRET: 'internal-secret' } as Env,
@@ -102,9 +98,9 @@ describe('email-prompt workflow routing', () => {
 
     expect(result).toMatchObject({
       intent: 'general',
-      replyText:
-        'Charles received your message, but the AI reply service is unavailable right now. Please try again later.',
+      replyText: "Charles received your message, but I'm having a few, well... problems.",
     });
+    expect(session).toHaveBeenCalledWith('email-run-123');
   });
 
   it('returns a friendly fallback when research child workflow fails', async () => {
@@ -148,9 +144,7 @@ describe('email-prompt workflow routing', () => {
     });
   });
 
-  it('keeps the workflow reply when history recording fails after success', async () => {
-    workflowMocks.recordWorkflowHistory.mockRejectedValueOnce(new Error('history unavailable'));
-
+  it('keeps the workflow reply when no workflow history is recorded here', async () => {
     const { run } = await import('../src/workflows/email-prompt.ts');
 
     const result = await run({

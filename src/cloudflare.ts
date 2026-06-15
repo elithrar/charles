@@ -17,6 +17,11 @@ import {
   type InboundEmailPayload,
 } from './email.ts';
 import { logEvent } from './logging.ts';
+import {
+  recordWorkflowHistory,
+  summarizeWorkflowResult,
+  type InternalWorkflowResult,
+} from './services/workflows.ts';
 
 export { CharlesAuthStore, CharlesWorkflowStore };
 
@@ -47,7 +52,7 @@ async function replyToEmail(
   env: Env,
   payload: InboundEmailPayload,
   text: string,
-) {
+): Promise<'reply' | 'send'> {
   const from = defaultFromAddress(env);
   const fromIdentity = defaultFromIdentity(env);
   const formattedFrom = formatEmailAddress(fromIdentity);
@@ -69,7 +74,7 @@ async function replyToEmail(
 
   try {
     await message.reply(new EmailMessage(from, payload.from, mime.asRaw()));
-    return;
+    return 'reply';
   } catch (error) {
     logEvent('warn', 'email.reply_failed_fallback_send', { error: String(error) });
   }
@@ -83,6 +88,7 @@ async function replyToEmail(
       ...(payload.references ? { References: payload.references } : {}),
     },
   });
+  return 'send';
 }
 
 async function recordEmailThread(env: Env, payload: InboundEmailPayload, replyText: string) {
@@ -128,22 +134,90 @@ async function buildWorkflowReply(
         status: response.status,
         bodyPreview,
       });
-      return EMAIL_WORKFLOW_FAILURE_REPLY;
+      return { replyText: EMAIL_WORKFLOW_FAILURE_REPLY };
     }
 
     const result = (await response.json()) as {
-      result?: { replyText?: string };
+      result?: { replyText?: string; childWorkflow?: InternalWorkflowResult };
       replyText?: string;
+      childWorkflow?: InternalWorkflowResult;
     };
-    return (
-      result.result?.replyText ||
-      result.replyText ||
-      'Charles received your message, but did not produce a reply.'
-    );
+    return {
+      replyText:
+        result.result?.replyText ||
+        result.replyText ||
+        'Charles received your message, but did not produce a reply.',
+      childWorkflow: result.result?.childWorkflow || result.childWorkflow,
+    };
   } catch (error) {
     logEvent('error', 'email.workflow_execution_failed', { error: String(error) });
-    return EMAIL_WORKFLOW_FAILURE_REPLY;
+    return { replyText: EMAIL_WORKFLOW_FAILURE_REPLY };
   }
+}
+
+async function deliverWorkflowReply(
+  message: ForwardableEmailMessage,
+  env: Env,
+  payload: InboundEmailPayload,
+  replyText: string,
+) {
+  try {
+    const deliveryMethod = await replyToEmail(message, env, payload, replyText);
+    logEvent('info', 'email.reply_sent', {
+      from: payload.from,
+      subject: payload.subject,
+      deliveryMethod,
+    });
+    return true;
+  } catch (error) {
+    logEvent('error', 'email.reply_delivery_failed', {
+      from: payload.from,
+      subject: payload.subject,
+      error: String(error),
+    });
+    return false;
+  }
+}
+
+async function recordDeliveredArtifacts(
+  env: Env,
+  payload: InboundEmailPayload,
+  replyText: string,
+  requestedBy: string,
+  childWorkflow?: InternalWorkflowResult,
+) {
+  const tasks: Promise<unknown>[] = [
+    recordEmailThread(env, payload, replyText).catch((error) =>
+      logEvent('error', 'email.thread_record_failed', {
+        from: payload.from,
+        subject: payload.subject,
+        error: String(error),
+      }),
+    ),
+  ];
+
+  if (childWorkflow) {
+    const summary = summarizeWorkflowResult(childWorkflow);
+    tasks.push(
+      recordWorkflowHistory(env, {
+        workflow: childWorkflow.workflow,
+        status: childWorkflow.ok ? 'ok' : 'error',
+        subject: payload.subject,
+        requestedBy,
+        summary,
+        createdAt: new Date().toISOString(),
+      }).catch((error) =>
+        logEvent('error', 'email.workflow_history_record_failed', {
+          requestedBy,
+          subject: payload.subject,
+          workflow: childWorkflow.workflow,
+          error: String(error),
+        }),
+      ),
+    );
+  }
+
+  await Promise.all(tasks);
 }
 
 export default {
@@ -168,21 +242,39 @@ export default {
 
     if (!env.INTERNAL_AUTH_SECRET) {
       logEvent('error', 'email.missing_internal_auth_secret');
-      ctx.waitUntil(
-        replyToEmail(
-          message,
-          env,
-          payload,
-          'Charles is missing internal workflow authentication configuration.',
-        ),
+      const delivered = await deliverWorkflowReply(
+        message,
+        env,
+        payload,
+        'Charles is missing internal workflow authentication configuration.',
       );
+      if (delivered) {
+        ctx.waitUntil(
+          recordDeliveredArtifacts(
+            env,
+            payload,
+            'Charles is missing internal workflow authentication configuration.',
+            sender.value,
+          ),
+        );
+      }
       return;
     }
 
-    const replyText = await buildWorkflowReply(env, ctx, sender.value, payload);
+    const workflowReply = await buildWorkflowReply(env, ctx, sender.value, payload);
     logEvent('info', 'email.reply_ready', { from: sender.value, subject: payload.subject });
 
-    ctx.waitUntil(recordEmailThread(env, payload, replyText));
-    ctx.waitUntil(replyToEmail(message, env, payload, replyText));
+    const delivered = await deliverWorkflowReply(message, env, payload, workflowReply.replyText);
+    if (delivered) {
+      ctx.waitUntil(
+        recordDeliveredArtifacts(
+          env,
+          payload,
+          workflowReply.replyText,
+          sender.value,
+          workflowReply.childWorkflow,
+        ),
+      );
+    }
   },
 } satisfies ExportedHandler<Env>;

@@ -98,12 +98,25 @@ describe('Cloudflare email handler', () => {
     const { default: handler } = await import('../src/cloudflare.ts');
     const send = vi.fn(async () => ({ messageId: 'fallback-id' }));
     const recordEmailThread = vi.fn(async () => undefined);
+    const recordWorkflowHistory = vi.fn(async () => undefined);
     const message = emailMessage({
       reply: vi.fn(async () => Promise.reject(new Error('reply failed'))),
     });
     const { ctx, pending } = executionContext();
 
-    appFetch.mockResolvedValue(Response.json({ result: { replyText: 'Reply **body**' } }));
+    appFetch.mockResolvedValue(
+      Response.json({
+        result: {
+          replyText: 'Reply **body**',
+          childWorkflow: {
+            workflow: 'research',
+            ok: true,
+            status: 200,
+            data: { result: { answer: 'ok' } },
+          },
+        },
+      }),
+    );
 
     await handler.email?.(
       message,
@@ -111,6 +124,7 @@ describe('Cloudflare email handler', () => {
         INTERNAL_AUTH_SECRET: 'internal-secret',
         EMAIL: { send },
         AUTH_STORE: { getByName: () => ({ recordEmailThread }) },
+        WORKFLOW_STORE: { getByName: () => ({ recordWorkflowHistory }) },
       } as unknown as Env,
       ctx,
     );
@@ -133,6 +147,135 @@ describe('Cloudflare email handler', () => {
         replyText: 'Reply **body**',
       }),
     );
+    expect(recordWorkflowHistory).toHaveBeenCalledWith(
+      expect.objectContaining({
+        workflow: 'research',
+        status: 'ok',
+        requestedBy: 'matt@eatsleeprepeat.net',
+      }),
+    );
+  });
+
+  it('records the reply only after successful direct delivery', async () => {
+    const { default: handler } = await import('../src/cloudflare.ts');
+    const recordEmailThread = vi.fn(async () => undefined);
+    const recordWorkflowHistory = vi.fn(async () => undefined);
+    const message = emailMessage();
+    const { ctx, pending } = executionContext();
+
+    appFetch.mockResolvedValue(
+      Response.json({
+        result: {
+          replyText: 'Delivered reply',
+          childWorkflow: {
+            workflow: 'research',
+            ok: true,
+            status: 200,
+            data: { result: { answer: 'ok' } },
+          },
+        },
+      }),
+    );
+
+    await handler.email?.(
+      message,
+      {
+        INTERNAL_AUTH_SECRET: 'internal-secret',
+        EMAIL: { send: vi.fn(async () => ({ messageId: 'unused' })) },
+        AUTH_STORE: { getByName: () => ({ recordEmailThread }) },
+        WORKFLOW_STORE: { getByName: () => ({ recordWorkflowHistory }) },
+      } as unknown as Env,
+      ctx,
+    );
+    await Promise.all(pending);
+
+    const workflowRequest = appFetch.mock.calls[0]?.[0];
+    expect(workflowRequest).toBeInstanceOf(Request);
+    expect(workflowRequest?.url).toBe(
+      'https://charles.internal/workflows/email-prompt?wait=result',
+    );
+    expect(workflowRequest?.headers.get('x-charles-internal-auth')).toBe('internal-secret');
+    expect(workflowRequest?.headers.get('x-charles-user')).toBe('matt@eatsleeprepeat.net');
+    await expect(workflowRequest?.clone().json()).resolves.toMatchObject({
+      from: 'matt@eatsleeprepeat.net',
+      subject: 'Test thread',
+      text: expect.stringContaining('Hello Charles'),
+    });
+    expect(message.reply).toHaveBeenCalledTimes(1);
+    expect(recordEmailThread).toHaveBeenCalledWith(
+      expect.objectContaining({ replyText: 'Delivered reply' }),
+    );
+    expect(recordWorkflowHistory).toHaveBeenCalledWith(
+      expect.objectContaining({ workflow: 'research', status: 'ok' }),
+    );
+  });
+
+  it('sends and records a configuration fallback when internal auth is missing', async () => {
+    const { default: handler } = await import('../src/cloudflare.ts');
+    const recordEmailThread = vi.fn(async () => undefined);
+    const message = emailMessage();
+    const { ctx, pending } = executionContext();
+
+    await handler.email?.(
+      message,
+      {
+        EMAIL: { send: vi.fn(async () => ({ messageId: 'unused' })) },
+        AUTH_STORE: { getByName: () => ({ recordEmailThread }) },
+      } as unknown as Env,
+      ctx,
+    );
+    await Promise.all(pending);
+
+    expect(appFetch).not.toHaveBeenCalled();
+    expect(message.reply).toHaveBeenCalledTimes(1);
+    expect(recordEmailThread).toHaveBeenCalledWith(
+      expect.objectContaining({
+        replyText: 'Charles is missing internal workflow authentication configuration.',
+      }),
+    );
+  });
+
+  it('does not record an outbound reply when delivery fails completely', async () => {
+    const { default: handler } = await import('../src/cloudflare.ts');
+    const send = vi.fn(async () => Promise.reject(new Error('send failed')));
+    const recordEmailThread = vi.fn(async () => undefined);
+    const recordWorkflowHistory = vi.fn(async () => undefined);
+    const message = emailMessage({
+      reply: vi.fn(async () => Promise.reject(new Error('reply failed'))),
+    });
+    const { ctx, pending } = executionContext();
+
+    appFetch.mockResolvedValue(
+      Response.json({
+        result: {
+          replyText: 'Undelivered reply',
+          childWorkflow: {
+            workflow: 'research',
+            ok: true,
+            status: 200,
+            data: { result: { answer: 'ok' } },
+          },
+        },
+      }),
+    );
+
+    await handler.email?.(
+      message,
+      {
+        INTERNAL_AUTH_SECRET: 'internal-secret',
+        EMAIL: { send },
+        AUTH_STORE: { getByName: () => ({ recordEmailThread }) },
+        WORKFLOW_STORE: { getByName: () => ({ recordWorkflowHistory }) },
+      } as unknown as Env,
+      ctx,
+    );
+
+    await Promise.allSettled(pending);
+
+    expect(message.reply).toHaveBeenCalledTimes(1);
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(recordEmailThread).not.toHaveBeenCalled();
+    expect(recordWorkflowHistory).not.toHaveBeenCalled();
   });
 
   it('rejects non-allowlisted senders without workflow admission', async () => {

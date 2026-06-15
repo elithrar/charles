@@ -1,5 +1,5 @@
 import { env } from 'cloudflare:workers';
-import { registerProvider } from '@flue/runtime';
+import { configureProvider, registerProvider } from '@flue/runtime';
 import { flue } from '@flue/runtime/routing';
 import { Result } from 'better-result';
 import { Hono, type MiddlewareHandler } from 'hono';
@@ -30,6 +30,10 @@ registerProvider('opencode-zen', {
       contextWindow: 272000,
     },
   },
+});
+configureProvider('opencode-zen', {
+  // OpenAI Responses tool-call continuations need persisted response items.
+  storeResponses: true,
 });
 
 type AppVariables = {
