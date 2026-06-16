@@ -1,5 +1,5 @@
 import { env } from 'cloudflare:workers';
-import { configureProvider, registerProvider } from '@flue/runtime';
+import { registerProvider } from '@flue/runtime';
 import { flue } from '@flue/runtime/routing';
 import { Result } from 'better-result';
 import { Hono, type MiddlewareHandler } from 'hono';
@@ -10,7 +10,7 @@ import { createCharlesAuth } from './auth.ts';
 import type { EmailThreadMessage, EmailThreadPage, UserLoginSummary } from './auth-store.ts';
 import type { GroceryReminderSummary } from './services/scheduler.ts';
 import type { CharlesEnv } from './types.ts';
-import { flueAdmin, getDashboardWorkflowRuns } from './services/flue-runs.ts';
+import { getDashboardWorkflowRuns } from './services/flue-runs.ts';
 import kumoStyles from '@cloudflare/kumo/styles/standalone?raw';
 import {
   dashboardHtml,
@@ -30,8 +30,6 @@ registerProvider('opencode-zen', {
       contextWindow: 272000,
     },
   },
-});
-configureProvider('opencode-zen', {
   // OpenAI Responses tool-call continuations need persisted response items.
   storeResponses: true,
 });
@@ -132,8 +130,6 @@ app.use('/runs/*', requireUser);
 app.use('/dashboard', requireUser);
 app.use('/dashboard/*', requireUser);
 app.use('/internal/*', requireUser);
-
-app.route('/internal/flue', flueAdmin);
 
 app.get('/dashboard', async (c) => {
   const scheduler = schedulerStub(c.env);

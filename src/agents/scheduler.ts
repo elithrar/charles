@@ -15,10 +15,20 @@ type SchedulerState = {
 };
 
 type SchedulerSql = {
-  exec<T = unknown>(query: string, ...bindings: unknown[]): Iterable<T>;
+  exec(
+    query: string,
+    ...bindings: unknown[]
+  ): Iterable<unknown> | { toArray(): Record<string, unknown>[] };
 };
 
 export type SchedulerSchedule = { id: string; callback?: string; type?: string };
+
+type SchedulerRuntime = {
+  state: SchedulerState;
+  setState(state: SchedulerState): void;
+  scheduleEvery(intervalSeconds: number, callback: string): Promise<SchedulerSchedule>;
+  listSchedules(): Promise<SchedulerSchedule[]>;
+};
 
 export function buildScheduleState(state: SchedulerState, schedules: SchedulerSchedule[]) {
   return {
@@ -61,17 +71,22 @@ export function claimSchedulerIdempotency(
     key,
     claimedAt,
   );
-  const rows = [
-    ...sql.exec<{ created_at?: string }>(
-      'SELECT key, created_at FROM scheduler_idempotency WHERE key = ?',
-      key,
-    ),
-  ];
+  const rows = sqlRows<{ created_at?: string }>(
+    sql.exec('SELECT key, created_at FROM scheduler_idempotency WHERE key = ?', key),
+  );
   return rows[0]?.created_at === claimedAt;
 }
 
 export function releaseSchedulerIdempotency(sql: SchedulerSql, key: string) {
   sql.exec('DELETE FROM scheduler_idempotency WHERE key = ?', key);
+}
+
+function sqlRows<T>(result: Iterable<unknown> | { toArray(): Record<string, unknown>[] }) {
+  return ('toArray' in result ? result.toArray() : [...result]) as T[];
+}
+
+function schedulerSql() {
+  return getCloudflareContext().storage.sql as unknown as SchedulerSql;
 }
 
 export default createAgent(() => ({
@@ -85,8 +100,9 @@ export const cloudflare = extend({
       initialState: SchedulerState = {};
 
       async onStart() {
-        const schedules = await this.getSchedules();
-        const existingId = this.state.groceryReminderScheduleId;
+        const agent = this as unknown as SchedulerRuntime;
+        const schedules = await agent.listSchedules();
+        const existingId = agent.state.groceryReminderScheduleId;
 
         if (
           existingId &&
@@ -99,8 +115,8 @@ export const cloudflare = extend({
           return;
         }
 
-        const schedule = await this.scheduleEvery(60 * 60, 'sendFridayGroceryReminderIfDue');
-        this.setState({ ...this.state, groceryReminderScheduleId: schedule.id });
+        const schedule = await agent.scheduleEvery(60 * 60, 'sendFridayGroceryReminderIfDue');
+        agent.setState({ ...agent.state, groceryReminderScheduleId: schedule.id });
         logEvent('info', 'scheduler.schedule_installed', {
           scheduleId: schedule.id,
           scheduleCount: schedules.length + 1,
@@ -108,8 +124,9 @@ export const cloudflare = extend({
       }
 
       async getScheduleState() {
-        const schedules = await this.getSchedules();
-        return buildScheduleState(this.state, schedules);
+        const agent = this as unknown as SchedulerRuntime;
+        const schedules = await agent.listSchedules();
+        return buildScheduleState(agent.state, schedules);
       }
 
       async repairSchedules() {
@@ -124,7 +141,7 @@ export const cloudflare = extend({
       }
 
       async sendFridayGroceryReminderIfDue() {
-        ensureSchedulerTables(this.ctx.storage.sql);
+        ensureSchedulerTables(schedulerSql());
 
         const due = shouldSendFridayGroceryReminder(new Date(), { timezone: DEFAULT_TIMEZONE });
         if (!due.due) {
@@ -139,14 +156,15 @@ export const cloudflare = extend({
       }
 
       async sendTestGroceryReminder(localDate = new Date().toISOString().slice(0, 10)) {
-        ensureSchedulerTables(this.ctx.storage.sql);
+        ensureSchedulerTables(schedulerSql());
         return this.sendGroceryReminderForLocalDate(`test-${localDate}`);
       }
 
       private async sendGroceryReminderForLocalDate(localDate: string) {
+        const sql = schedulerSql();
         const key = `grocery-reminder:${localDate}`;
         const claimedAt = new Date().toISOString();
-        if (!claimSchedulerIdempotency(this.ctx.storage.sql, key, claimedAt)) {
+        if (!claimSchedulerIdempotency(sql, key, claimedAt)) {
           logEvent('info', 'scheduler.grocery_reminder_skipped', {
             reason: 'already-sent',
             localDate,
@@ -160,7 +178,7 @@ export const cloudflare = extend({
           env,
         );
         if ('error' in grocery) {
-          releaseSchedulerIdempotency(this.ctx.storage.sql, key);
+          releaseSchedulerIdempotency(sql, key);
           logEvent('error', 'scheduler.grocery_reminder_failed', {
             localDate,
             reason: grocery.error.message,
@@ -182,7 +200,7 @@ export const cloudflare = extend({
         });
 
         const sentAt = new Date().toISOString();
-        this.ctx.storage.sql.exec(
+        sql.exec(
           'INSERT OR REPLACE INTO grocery_reminders (local_date, sent_at, recipients_json, summary_json) VALUES (?, ?, ?, ?)',
           localDate,
           sentAt,
@@ -200,14 +218,15 @@ export const cloudflare = extend({
       }
 
       getRecentGroceryReminders(limit = 10): GroceryReminderSummary[] {
-        ensureSchedulerTables(this.ctx.storage.sql);
+        const sql = schedulerSql();
+        ensureSchedulerTables(sql);
 
-        return [
-          ...this.ctx.storage.sql.exec(
+        return sqlRows<{ summary_json: string }>(
+          sql.exec(
             'SELECT summary_json FROM grocery_reminders ORDER BY sent_at DESC LIMIT ?',
             limit,
           ),
-        ].map(
+        ).map(
           (row: { summary_json: string }) => JSON.parse(row.summary_json) as GroceryReminderSummary,
         );
       }
@@ -217,7 +236,6 @@ export const cloudflare = extend({
           await dispatch({
             agent: 'charles',
             id: 'default',
-            session: 'scheduler',
             input: {
               type: 'grocery.reminder.sent',
               summary,

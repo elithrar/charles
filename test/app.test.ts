@@ -4,46 +4,28 @@ vi.mock('cloudflare:workers', () => ({
   env: {},
 }));
 
+vi.mock('@flue/runtime', () => ({
+  listRuns: vi.fn(async () => ({
+    runs: [
+      {
+        runId: 'research-run-1',
+        workflowName: 'research',
+        status: 'completed',
+        startedAt: '2026-06-19T14:02:00.000Z',
+        endedAt: '2026-06-19T14:02:05.000Z',
+        durationMs: 5000,
+        isError: false,
+      },
+    ],
+  })),
+  registerProvider: vi.fn(),
+}));
+
 vi.mock('@flue/runtime/routing', async () => {
   const { Hono } = await import('hono');
 
   return {
     flue: () => new Hono(),
-    admin: () => {
-      const app = new Hono();
-      app.get('/runs', (c) =>
-        c.json({
-          items: [
-            {
-              runId: 'research-run-1',
-              owner: {
-                kind: 'workflow',
-                workflowName: 'research',
-                instanceId: 'research-run-1',
-              },
-              status: 'completed',
-              startedAt: '2026-06-19T14:02:00.000Z',
-              endedAt: '2026-06-19T14:02:05.000Z',
-              durationMs: 5000,
-              isError: false,
-            },
-          ],
-        }),
-      );
-      app.get('/runs/:runId', (c) =>
-        c.json({
-          runId: c.req.param('runId'),
-          owner: {
-            kind: 'workflow',
-            workflowName: 'research',
-            instanceId: c.req.param('runId'),
-          },
-          status: 'completed',
-          startedAt: '2026-06-19T14:02:00.000Z',
-        }),
-      );
-      return app;
-    },
   };
 });
 

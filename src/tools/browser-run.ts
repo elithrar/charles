@@ -1,20 +1,20 @@
-import { Type, defineTool } from '@flue/runtime';
+import { defineTool } from '@flue/runtime';
 import { logEvent } from '../logging.ts';
 import type { BrowserRunBinding } from '../types.ts';
 
 const MAX_TEXT_CHARS = 12_000;
 
-const browserRunAction = Type.Union([
-  Type.Literal('markdown'),
-  Type.Literal('links'),
-  Type.Literal('content'),
-  Type.Literal('json'),
-  Type.Literal('scrape'),
-  Type.Literal('crawl'),
-  Type.Literal('snapshot'),
-  Type.Literal('screenshot'),
-  Type.Literal('pdf'),
-]);
+const browserRunAction = [
+  'markdown',
+  'links',
+  'content',
+  'json',
+  'scrape',
+  'crawl',
+  'snapshot',
+  'screenshot',
+  'pdf',
+] as const;
 
 type BrowserRunToolArgs = {
   action: string;
@@ -97,35 +97,33 @@ export function createBrowserRunTools(env: { BROWSER?: BrowserRunBinding }) {
       name: 'browser_run',
       description:
         'Browse and navigate the live web with Cloudflare Browser Run. Use this when a user asks for current information, asks you to inspect a URL, compare pages, extract links, summarize rendered content, or gather citations. Navigate by calling this tool on a URL, then follow relevant returned links with another call. Prefer markdown for reading, links for navigation choices, json for structured extraction, scrape with a selector for narrow extraction, crawl for small multi-page site exploration, snapshot when both rendered structure and visual context matter, and screenshot/pdf only when visual or archival evidence is needed. Keep calls targeted and cite URLs from results in the final answer.',
-      parameters: Type.Object({
-        action: browserRunAction,
-        url: Type.Optional(Type.String({ description: 'HTTP(S) URL to open or navigate to.' })),
-        html: Type.Optional(
-          Type.String({ description: 'Inline HTML to render instead of opening a URL.' }),
-        ),
-        prompt: Type.Optional(
-          Type.String({
+      parameters: {
+        type: 'object',
+        properties: {
+          action: { type: 'string', enum: browserRunAction },
+          url: { type: 'string', description: 'HTTP(S) URL to open or navigate to.' },
+          html: { type: 'string', description: 'Inline HTML to render instead of opening a URL.' },
+          prompt: {
+            type: 'string',
             description:
               'Extraction instructions for json, scrape, crawl, or snapshot requests. Keep narrow and specific.',
-          }),
-        ),
-        selector: Type.Optional(
-          Type.String({
+          },
+          selector: {
+            type: 'string',
             description: 'CSS selector for scrape requests when extracting specific elements.',
-          }),
-        ),
-        formats: Type.Optional(
-          Type.Array(
-            Type.Union([
-              Type.Literal('html'),
-              Type.Literal('markdown'),
-              Type.Literal('screenshot'),
-              Type.Literal('accessibilityTree'),
-            ]),
-            { description: 'Snapshot formats. Use at least two formats for snapshot.' },
-          ),
-        ),
-      }),
+          },
+          formats: {
+            type: 'array',
+            items: {
+              type: 'string',
+              enum: ['html', 'markdown', 'screenshot', 'accessibilityTree'],
+            },
+            description: 'Snapshot formats. Use at least two formats for snapshot.',
+          },
+        },
+        required: ['action'],
+        additionalProperties: false,
+      },
       async execute(args) {
         const params = args as BrowserRunToolArgs;
         if (!env.BROWSER?.quickAction) {
