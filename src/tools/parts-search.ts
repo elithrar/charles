@@ -1,4 +1,4 @@
-import { Type, defineTool } from '@flue/runtime';
+import { defineTool } from '@flue/runtime';
 
 type PartsSearchRequestType =
   | 'identify-part-number'
@@ -269,12 +269,18 @@ export function createPartsSearchTools() {
       name: 'parts_search',
       description:
         'Build a fitment-aware research plan for air-cooled Porsche 911 (1974-1989) and early BMW 2002 parts requests. Use before web search when the user asks what part fits, asks to confirm a part number, asks for stock/price, or asks what parts solve a car problem.',
-      parameters: Type.Object({
-        prompt: Type.String({
-          description:
-            'The full user parts request, including car/year/submodel, symptoms, candidate part numbers, and requested vendors when available.',
-        }),
-      }),
+      parameters: {
+        type: 'object',
+        properties: {
+          prompt: {
+            type: 'string',
+            description:
+              'The full user parts request, including car/year/submodel, symptoms, candidate part numbers, and requested vendors when available.',
+          },
+        },
+        required: ['prompt'],
+        additionalProperties: false,
+      },
       async execute(args) {
         return JSON.stringify(buildPartsSearchPlan((args as { prompt: string }).prompt), null, 2);
       },

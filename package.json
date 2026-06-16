@@ -17,29 +17,29 @@
   "dependencies": {
     "@cloudflare/kumo": "^2.5.2",
     "@cloudflare/playwright": "^1.3.0",
-    "@flue/runtime": "^0.10.1",
+    "@flue/runtime": "1.0.0-beta.1",
     "@phosphor-icons/react": "^2.1.10",
     "@react-email/render": "^2.0.8",
-    "agents": "^0.14.1",
-    "better-auth": "^1.5.0",
+    "agents": "^0.16.1",
+    "better-auth": "^1.6.19",
     "better-result": "^2.9.2",
-    "hono": "^4.10.8",
-    "mimetext": "^3.0.27",
-    "postal-mime": "^2.6.3",
+    "hono": "^4.12.25",
+    "mimetext": "^3.0.28",
+    "postal-mime": "^2.7.4",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
-    "valibot": "^1.2.0"
+    "valibot": "^1.4.1"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "^4.20260613.1",
-    "@flue/cli": "^0.10.1",
+    "@cloudflare/workers-types": "^4.20260616.1",
+    "@flue/cli": "1.0.0-beta.1",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
-    "oxfmt": "^0.54.0",
-    "oxlint": "^1.69.0",
-    "typescript": "^5.9.3",
-    "vitest": "^4.0.16",
-    "wrangler": "^4.55.0"
+    "oxfmt": "^0.55.0",
+    "oxlint": "^1.70.0",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.9",
+    "wrangler": "^4.100.0"
   },
   "packageManager": "pnpm@10.25.0"
 }

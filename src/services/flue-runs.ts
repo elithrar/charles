@@ -1,10 +1,5 @@
-import { admin } from '@flue/runtime/routing';
-import type { RunPointer } from '@flue/runtime/adapter';
+import { listRuns, type RunPointer } from '@flue/runtime';
 import type { CharlesEnv } from '../types.ts';
-
-type FlueRunListResponse = {
-  items?: RunPointer[];
-};
 
 export type DashboardWorkflowRun = {
   id: string;
@@ -19,30 +14,27 @@ export type DashboardWorkflowRun = {
   eventsUrl: string;
 };
 
-export const flueAdmin = admin();
-
 function summarizeRun(run: RunPointer): string {
   const duration = run.durationMs === undefined ? '' : ` Duration: ${run.durationMs}ms.`;
-  return `${run.owner.workflowName} is ${run.status}.${duration}`;
+  return `${run.workflowName} is ${run.status}.${duration}`;
 }
 
 export async function getDashboardWorkflowRuns(
   env: CharlesEnv,
   limit = 5,
 ): Promise<DashboardWorkflowRun[]> {
-  const response = await flueAdmin.fetch(
-    new Request(`https://charles.internal/runs?limit=${limit}`),
-    env,
-  );
-  if (!response.ok) {
-    throw new Error(`Flue admin runs request failed with HTTP ${response.status}.`);
-  }
+  void env;
+  const body = await listRuns({ limit }).catch((error) => {
+    if (error instanceof Error && error.message.includes('called before runtime was configured')) {
+      return { runs: [] };
+    }
 
-  const body = (await response.json()) as FlueRunListResponse;
-  return (body.items ?? []).map((run) => ({
+    throw error;
+  });
+  return body.runs.map((run) => ({
     id: run.runId,
     runId: run.runId,
-    workflow: run.owner.workflowName,
+    workflow: run.workflowName,
     status: run.status,
     summary: summarizeRun(run),
     createdAt: run.startedAt,
